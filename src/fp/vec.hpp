@@ -1,7 +1,9 @@
 #pragma once
 #include <algorithm>
 #include <cstddef>
+#include <numeric>
 #include <optional>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -192,6 +194,119 @@ std::vector<std::pair<size_t, T>> enumerate(std::vector<T> const &v) {
 template <class T> std::vector<T> unique(std::vector<T> const &v) {
   auto out = v;
   out.erase(std::unique(out.begin(), out.end(), out.end()));
+  return out;
+}
+
+template <class A, class B, class C>
+std::vector<std::tuple<A, B, C>> zip3(std::vector<A> const &a,
+                                      std::vector<B> const &b,
+                                      std::vector<C> const &c) {
+  auto n = std::min({a.size(), b.size(), c.size()});
+  std::vector<std::tuple<A, B, C>> out;
+  out.reserve(n);
+  for (size_t i = 0; i < n; ++i)
+    out.emplace_back(a[i], b[i], c[i]);
+  return out;
+}
+
+template <class A, class B, class C, class F>
+auto zip_with3(std::vector<A> const &a, std::vector<B> const &b,
+               std::vector<C> const &c, F f) {
+  std::vector<std::invoke_result_t<F, A, B, C>> out;
+  auto n = std::min({a.size(), b.size(), c.size()});
+  out.reserve(n);
+  for (size_t i = 0; i < n; ++i)
+    out.push_back(f(a[i], b[i], c[i]));
+  return out;
+}
+
+template <class A, class B>
+std::pair<std::vector<A>, std::vector<B>>
+unzip(std::vector<std::pair<A, B>> const &ps) {
+  std::vector<A> as;
+  std::vector<B> bs;
+  as.reserve(ps.size());
+  bs.reserve(ps.size());
+  for (auto const &[a, b] : ps) {
+    as.push_back(a);
+    bs.push_back(b);
+  }
+  return {std::move(as), std::move(bs)};
+}
+
+template <class T> T sum(std::vector<T> const &v) {
+  return std::accumulate(v.begin(), v.end(), T{});
+}
+
+template <class T> T product(std::vector<T> const &v) {
+  return std::accumulate(v.begin(), v.end(), T{1});
+}
+
+template <class T> std::optional<T> maximum(std::vector<T> const &v) {
+  if (v.empty())
+    return std::nullopt;
+  return *std::max_element(v.begin(), v.end());
+}
+
+template <class T> std::optional<T> minimum(std::vector<T> const &v) {
+  if (v.empty())
+    return std::nullopt;
+  return *std::min_element(v.begin(), v.end());
+}
+
+template <class T, class F>
+std::pair<std::vector<T>, std::vector<T>> span(std::vector<T> const &v,
+                                               F pred) {
+  auto it = std::find_if_not(v.begin(), v.end(), pred);
+  return {std::vector<T>(v.begin(), it), std::vector<T>(it, v.end())};
+}
+
+template <class T, class F>
+std::vector<T> scan(std::vector<T> const &v, T init, F op) {
+  std::vector<T> out;
+  out.reserve(v.size());
+  T acc = init;
+  for (auto const &x : v) {
+    acc = op(acc, x);
+    out.push_back(acc);
+  }
+  return out;
+}
+
+template <class T> std::vector<T> intersperse(std::vector<T> const &v, T sep) {
+  std::vector<T> out;
+  out.reserve(v.size() * 2);
+  for (size_t i = 0; i < v.size(); ++i) {
+    if (i) {
+      out.push_back(sep);
+    }
+    out.push_back(v[i]);
+  }
+  return out;
+}
+
+template <class T>
+std::vector<T> intercalate(std::vector<std::vector<T>> const &vs,
+                           std::vector<T> const &sep) {
+  std::vector<T> out;
+  for (size_t i = 0; i < vs.size(); ++i) {
+    if (i)
+      out.insert(out.end(), sep.begin(), sep.end());
+    out.insert(out.end(), vs[i].begin(), vs[i].end());
+  }
+  return out;
+}
+
+template <class T> std::vector<T> replicate(size_t n, T x) {
+  return std::vector<T>(n, std::move(x));
+}
+
+template <class T = int> std::vector<T> range(T from, T to, T step = 1) {
+  std::vector<T> out;
+  if (step == T{})
+    return out;
+  for (T i = from; i < to; i += step)
+    out.push_back(i);
   return out;
 }
 } // namespace fp
