@@ -1,6 +1,8 @@
 #pragma once
+#include "result.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -117,5 +119,92 @@ inline std::string pad_right(std::string s, size_t width, char c = ' ') {
   if (s.size() < width)
     s.append(width - s.size(), c);
   return s;
+}
+
+inline Result<int> to_int(std::string const &s) {
+  std::string t = trim(s);
+  if (t.empty())
+    return err<int>("not a number");
+  try {
+    return ok<int>(std::stoi(t));
+  } catch (...) {
+    return err<int>("not a number");
+  }
+}
+
+inline Result<double> to_double(std::string const &s) {
+  std::string t = trim(s);
+  if (t.empty())
+    return err<double>("not a number");
+  try {
+    return ok<double>(std::stod(t));
+  } catch (...) {
+    return err<double>("not a number");
+  }
+}
+
+inline std::string reverse(std::string s) {
+  std::reverse(s.begin(), s.end());
+  return s;
+}
+
+inline std::string truncate(std::string s, size_t max,
+                            std::string tail = "...") {
+  if (s.size() <= max)
+    return s;
+  if (max <= tail.size())
+    return tail.substr(0, max);
+  return s.substr(0, max - tail.size()) + tail;
+}
+
+inline std::string capitalize(std::string s) {
+  if (!s.empty())
+    s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
+  return s;
+}
+
+inline std::string title(std::string s) {
+  bool word_start = true;
+  for (char &c : s) {
+    unsigned char u = static_cast<unsigned char>(c);
+    if (std::isspace(u)) {
+      word_start = true;
+    } else if (word_start) {
+      c = static_cast<char>(std::toupper(u));
+      word_start = false;
+    }
+  }
+  return s;
+}
+
+template <std::ranges::range R>
+std::string join(R const &parts, std::string const &sep) {
+  std::string out;
+  bool first = true;
+  for (auto const &p : parts) {
+    if (!first)
+      out += sep;
+    out += p;
+    first = false;
+  }
+  return out;
+}
+
+inline std::vector<std::string> chunk(std::string const &s, size_t n) {
+  std::vector<std::string> out;
+  if (n == 0)
+    return out;
+  for (size_t i = 0; i < s.size(); i += n)
+    out.emplace_back(s.substr(i, n));
+  return out;
+}
+
+inline bool starts_with(std::string const &s, std::string const &prefix) {
+  return s.rfind(prefix, 0) == 0;
+}
+
+inline bool ends_with(std::string const &s, std::string const &suffix) {
+  return s.size() >= suffix.size() &&
+         s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 } // namespace fp::str
