@@ -121,7 +121,7 @@ TEST(VecChunk, ZeroIsEmpty) {
 | `validation` | check both branches; validate_all accumulates *all* messages; combine2 accumulates; traverse over vector reports every failure; to_result collapse. |
 | `vec` | take/drop boundaries (n=0, n>size); chunk(0) → empty; partition stability; group_by keys; zip truncation; flat_map concat; enumerate indices. |
 | `ranges` | map/filter over views (not just vector); fold_left init type; take/drop over non-sized ranges (infinite view!); concat of views; to_vector. |
-| `string` | trim only ' ' by default + explicit '\t'; split trailing empty segment semantics (decide!); join empty; replace_all with "" guard; strip_prefix no-op. |
+| `string` | trim only ' ' by default + explicit '\t'; split drops the trailing empty segment (`"a,b,"` → `{"a","b"}`, decided — matches the `char` overload via `getline`; the `string`-delimiter overload must skip the final empty push); join empty; replace_all with "" guard; strip_prefix no-op. |
 | `compose`/`curry` | compose right-to-left; pipe left-to-right; currying accumulates then calls; zero-arg & default-arg functions (is_invocable decision); uncurry round-trip. |
 | `memoize` | result cached (spy counting calls); distinct args distinct results; recursive fib parses. |
 | `concurrent` | par_map order preserved for large vectors; empty/single-thread fallback; actor Send order; actor Ask future resolves to post-handler state; Channel blocking pairs (send/recv in threads + timeout). |

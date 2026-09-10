@@ -398,16 +398,22 @@ index vector.)
 
 ---
 
-## Design questions (decide before implementing)
+## Design decisions (resolved)
 
-1. **Alignment contract** — keep `element_aligned` (current, safe) as the
-   documented default vs adding aligned-allocator support for
-   `vector_aligned`. Changing `map_inplace`'s flags silently is unsafe;
-   decide and document.
-2. **`map_inplace` tail policy** — scalar tail (current), masked tail (4), or
-   both with a policy parameter? Recommend: keep scalar for `native_simd`,
-   offer masked for fixed widths.
-3. **Math overload ownership** — thin named wrappers in `simd.hpp` vs pure
-   documentation of `std::experimental::` overloads. Wrappers are
-   discoverable; docs are zero-maintenance. Recommend wrappers for the
-   top-6 functions.
+1. **Alignment — `element_aligned` stays the documented default.** No silent
+   flag changes in `map_inplace`/`map_to`/`reduce`/`dot`; `std::vector` and
+   `std::span` allocation is not guaranteed over-aligned, so
+   `vector_aligned` would be a contract lie for the existing overloads.
+   Aligned-allocator support (`vector_aligned`) may be added later as an
+   explicit opt-in surface (e.g. `map_inplace_aligned`), only if a bench
+   shows a real win. Document this in the README.
+2. **Tail policy — scalar tail for `native_simd`, masked for fixed widths.**
+   `map_inplace` keeps its scalar tail (stable signature, correct
+   everywhere). Masked tails are provided by `map_inplace_fixed` (entry 4),
+   which is inherently fixed-width; no policy parameter on the native path —
+   the width-dependent tail behavior would be untestable.
+3. **Math overloads — thin named wrappers in `simd.hpp`.** `map_sqrt`,
+   `map_exp`, `map_log`, `map_sin`, `map_cos`, `map_floor`, `map_fabs`
+   (entry 6). Discoverable, tab-completable, and unit-testable; pure
+   documentation of `std::experimental::` overloads is zero-maintenance but
+   invisible to users who don't know the extension exists.

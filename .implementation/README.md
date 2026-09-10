@@ -55,3 +55,25 @@ reflects reality: implemented features are listed as done, and only the
    both trees now), documents `<fp/ranges.h>` (file is `ranges.hpp`), and
    describes `include/forgefp/fp/` as a 4-header "older subset" (it is a full
    copy). Fix in `meta.md`.
+
+## Resolved design decisions (consolidated)
+
+Every open "decide before implementing" question from the module files has
+been resolved. The per-module files state each decision in context; this is
+the single source of truth. Implement against these, not against older
+"decide" phrasing.
+
+| Module | Decision |
+|---|---|
+| concurrent | **`Async<T>` / `AsyncResult<T>`**: both, layered — `AsyncResult<T>` stays the `Result`-carrying alias (`Async<Result<T>>`); no separately-typed errors. |
+| concurrent | **Channel backpressure**: unbounded by default (`capacity = 0`), bounded opt-in; both ship, trade-off documented. |
+| concurrent | **ThreadPool ownership**: explicit instance only; no global singleton. |
+| simd | **Alignment**: `element_aligned` stays the documented default; no silent flag changes; aligned allocator only as later explicit opt-in. |
+| simd | **Tail policy**: scalar tail for `native_simd` `map_inplace`; masked tail via `map_inplace_fixed` (fixed widths only); no policy parameter. |
+| simd | **Math overloads**: thin named wrappers in `simd.hpp` (`map_sqrt`, `map_exp`, `map_log`, `map_sin`, `map_cos`, `map_floor`, `map_fabs`). |
+| combinator | **`when`/`unless`**: keep the names; document in README. |
+| combinator | **`fix` + `memoize`**: no official composition; document the manual one-liner. |
+| combinator | **`compose` arity**: `compose(f)` = `f`, `compose()` = `identity`; mirrors `pipe`. |
+| combinator | **`pipe_with`**: keep the name. |
+| meta | **Missing-simd headers**: `#error` in `simd.hpp` when `FP_HAS_SIMD` undefined; `all.hpp` skips simd silently. |
+| testing | **`split` trailing empty**: dropped (`"a,b,"` → `{"a","b"}`); make the `string`-delimiter overload match the `char` overload. |

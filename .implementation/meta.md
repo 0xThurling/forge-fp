@@ -102,8 +102,11 @@ where reviewer friction lives.
 `<experimental/simd>` is genuinely absent on some Clang/libc++ combos and
 MSVC. The current code hard-includes it; a `FP_HAS_SIMD` guard (in addition
 to excluding simd from `all.hpp`) makes the portability claim *true* instead
-of aspirational. All headers should `#error`-or-ignore consistently; decide
-which.
+of aspirational. All headers use `#error` consistently: `simd.hpp` fails
+loudly with a clear message when `FP_HAS_SIMD` is undefined (a header that
+silently degraded to scalar code would lie about performance), while
+`all.hpp` simply skips including simd — the ignore happens at the aggregate
+level, the error at the point of direct use.
 
 ## 7. Stale files / leftover scaffolding [P1]
 

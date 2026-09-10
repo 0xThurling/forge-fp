@@ -56,7 +56,8 @@ inline std::vector<std::string> split(std::string const &s,
     out.push_back(s.substr(start, pos - start));
     start = pos + delim.size();
   }
-  out.push_back(s.substr(start));
+  if (start < s.size())
+    out.push_back(s.substr(start));
   return out;
 }
 

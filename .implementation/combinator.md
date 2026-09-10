@@ -179,7 +179,7 @@ the Piped style is meant to be the library's flagship (README's top example
 says it is).
 
 **Implementation** — a helper, not an `operator|` overload (binary `|` can't
-carry extra args cleanly); decide the name in the README
+carry extra args cleanly); name is `pipe_with` (see Design decisions)
 
 ```cpp
 // compose.hpp
@@ -192,13 +192,23 @@ auto pipe_with(Piped<T> p, F f, Ts const&... ts) {
 
 ---
 
-## Open design questions (resolve before implementing the P2s)
+## Design decisions (resolved)
 
-1. **`when`/`unless` naming** — collides with `std::ranges`-adjacent naming and
-   `boost::hana` conventions. Choose, document, and keep.
-2. **`fix` + mutable state** — `fix` returns a lambda; making it share state
-   with `memoize` requires the memoized function to live in the same closure.
-   Decide whether `fix` should compose with `memoize` officially.
-3. **`compose` arity-zero/one** — should `compose()` = `identity` and
-   `compose(f)` = `f`? Cheap to support, big ergonomics win for generic code
-   building pipelines dynamically.
+1. **`when`/`unless` naming — keep `when`/`unless`.** They are the classic
+   FP names (Clojure, Haskell guards, Ruby), self-documenting, and there is
+   no `std::ranges::when` collision; boost::hana's `if_` is not a naming
+   convention this library follows. Document once in the README and keep.
+2. **`fix` + `memoize` — no official composition.** `fix` returns a plain
+   lambda; memoization is orthogonal state, and weaving it into `fix`
+   complicates the signature for one niche use. Users compose manually
+   (`memoize(fix(...))` — note `memoize` must wrap the *recursive* callable
+   only when the closure it captures is the same one). Document the
+   one-liner, don't build special support.
+3. **`compose` arity — yes: `compose(f)` = `f`, `compose()` = `identity`.**
+   Mirrors `pipe`'s existing zero-arg fall-through and the implementation
+   sketch already falls through naturally for one arg; zero-arg delegates to
+   `identity` from combinators.hpp. Cheap, and generic code that builds
+   pipelines dynamically benefits.
+4. **`pipe_with` name — keep `pipe_with`.** The helper name is already used
+   in the implementation sketch; the README documents it as the variadic
+   pipe extension.

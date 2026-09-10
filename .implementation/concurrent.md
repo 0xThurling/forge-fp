@@ -623,13 +623,21 @@ actor(State initial, Handler h, size_t mailbox_capacity = 0)
 
 ---
 
-## Design questions (decide before implementing)
+## Design decisions (resolved)
 
-1. **`Async<T>` vs `AsyncResult<T>`** — keep `Result` inside the future
-   (current alias) or make `Async<T>` carry typed errors separately? The
-   `then`/`and_then` distinction depends on this.
-2. **Backpressure default** — unbounded `Channel` (simple) vs bounded
-   (survivable under load). Ship both, document the trade-off.
-3. **ThreadPool ownership** — global singleton vs explicit `ThreadPool`
-   instance? Explicit (constructed by caller) is testable and avoids
-   shutdown-order bugs; default to explicit.
+1. **`Async<T>` and `AsyncResult<T>` — keep both, layered.** `Async<T>`
+   wraps a `std::future<T>`; `AsyncResult<T>` stays the `Result`-carrying
+   surface (`Async<Result<T>>`, the existing alias, unchanged). Rationale:
+   every combinator that exists or is planned (`async_map`, `async_sequence`,
+   `race`, `timeout`, `retry`) inspects `Result` (`is_ok()`) — a
+   separately-typed `Async<T>` would fork the API for zero gain. `then` maps
+   over the value; `and_then` flattens, and since `T = Result<U>` here it
+   short-circuits on error for free.
+2. **Backpressure — unbounded by default, bounded opt-in.** `Channel(0)`
+   = unbounded (today's semantics); `Channel(capacity)` = bounded. Ship
+   both, document the trade-off in the README. Rationale: the unbounded
+   default preserves the existing actor behavior (`mailbox_capacity = 0`),
+   and bounded mode exists where overload must be observable.
+3. **ThreadPool ownership — explicit instance only.** No global singleton.
+   Callers construct the pool and pass it by reference (or `shared_ptr`);
+   testable, no shutdown-order bugs, no hidden global state.
