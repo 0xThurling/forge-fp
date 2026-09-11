@@ -607,19 +607,76 @@ AsyncResult<T> retry(F make, size_t attempts, std::chrono::milliseconds delay) {
 `Channel(capacity)` above) make overload observable and testable.
 
 **Implementation** — reuse `Channel<Item>` for the mailbox and gain
-backpressure for free
+backpressure for free. `close()` in the destructor makes the loop's `recv()`
+throw, which is the shutdown signal; `state_` stays behind its own mutex so
+`snapshot()` remains race-free (the handler runs while holding it, matching
+the original actor's locking behavior)
 
 ```cpp
-// in actor: constructor gains a mailbox bound (0 = unbounded, today's behavior)
-template <class Msg, class State>
-actor(State initial, Handler h, size_t mailbox_capacity = 0)
-    : mailbox_(mailbox_capacity), state_(std::move(initial)),
-      handler_(std::move(h)), running_(true),
-      thr_([this] { loop(); }) {}
+template <class Msg, class State> class actor {
+  struct Item {
+    Msg m;
+    std::optional<std::promise<State>> reply;
+  };
 
-// Send/Ask become mailbox_.send({std::move(m), std::move(reply)});
-// loop() becomes: for (auto item = mailbox_.recv(); running_; item = mailbox_.recv()) ...
+public:
+  using Handler = std::function<State(State, Msg)>;
+
+  actor(State initial, Handler h, size_t mailbox_capacity = 0)
+      : mailbox_(mailbox_capacity), state_(std::move(initial)),
+        handler_(std::move(h)), thr_([this] { loop(); }) {}
+
+  void Send(Msg m) {
+    mailbox_.send(Item{std::move(m), std::nullopt});
+  }
+
+  std::future<State> Ask(Msg m) {
+    std::promise<State> p;
+    auto fut = p.get_future();
+    mailbox_.send(Item{std::move(m), std::move(p)});
+    return fut;
+  }
+
+  ~actor() {
+    mailbox_.close();
+    if (thr_.joinable())
+      thr_.join();
+  }
+
+  State snapshot() const {
+    std::lock_guard lock(mu_);
+    return state_;
+  }
+
+private:
+  void loop() {
+    for (;;) {
+      Item item;
+      try {
+        item = mailbox_.recv();
+      } catch (std::runtime_error const &) {
+        return;
+      }
+      std::lock_guard lock(mu_);
+      State new_state = handler_(state_, item.m);
+      if (item.reply)
+        item.reply->set_value(new_state);
+      state_ = std::move(new_state);
+    }
+  }
+
+  mutable std::mutex mu_;
+  Channel<Item> mailbox_;
+  State state_;
+  Handler handler_;
+  std::thread thr_;
+};
 ```
+
+Backpressure: with `mailbox_capacity > 0`, `Send`/`Ask` block when the
+mailbox is full instead of silently growing memory. With `0` (the default)
+behavior is identical to today's unbounded actor. The `running_` flag is
+gone — shutdown is the channel's `close()`.
 
 ---
 

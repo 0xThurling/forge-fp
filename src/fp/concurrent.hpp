@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
@@ -78,6 +79,62 @@ void par_for_each(std::vector<T> const &v, F f,
     fut.get();
 }
 
+template <class T> class Channel {
+public:
+  explicit Channel(size_t capacity = 0) : capacity_(capacity), closed_(false) {}
+
+  void send(T t) {
+    std::unique_lock lock(mu_);
+    if (capacity_ > 0)
+      not_full_.wait(lock, [&] { return q_.size() < capacity_ || closed_; });
+
+    if (closed_)
+      throw std::runtime_error("send on closed Channel");
+
+    q_.push(std::move(t));
+    not_empty_.notify_one();
+  }
+
+  T recv() {
+    std::unique_lock lock(mu_);
+    not_empty_.wait(lock, [&] { return !q_.empty() || closed_; });
+    if (q_.empty())
+      throw std::runtime_error("recv on closed Channel");
+    T t = std::move(q_.front());
+    q_.pop();
+    if (capacity_ > 0)
+      not_full_.notify_one();
+    return t;
+  }
+
+  std::optional<T> try_recv() {
+    std::lock_guard lock(mu_);
+    if (q_.empty())
+      return std::nullopt;
+    T t = std::move(q_.front());
+    q_.pop();
+    if (capacity_ > 0)
+      not_full_.notify_one();
+    return t;
+  }
+
+  void close() {
+    {
+      std::lock_guard lock(mu_);
+      closed_ = true;
+    }
+    not_empty_.notify_all();
+    not_full_.notify_all();
+  }
+
+private:
+  size_t capacity_;
+  bool closed_;
+  std::queue<T> q_;
+  std::mutex mu_;
+  std::condition_variable not_empty_, not_full_;
+};
+
 template <class Msg, class State> class Actor {
   struct Item {
     Msg m;
@@ -87,35 +144,25 @@ template <class Msg, class State> class Actor {
 public:
   using Handler = std::function<State(State, Msg)>;
 
-  Actor(State initial, Handler h)
-      : state_(std::move(initial)), handler_(std::move(h)), running_(true),
-        thr_([this] { this->loop(); }) {}
-
-  ~Actor() {
-    {
-      std::lock_guard lock(mu_);
-      running_ = false;
-    }
-    cv_.notify_all();
-    if (thr_.joinable())
-      thr_.join();
-  }
+  Actor(State initial, Handler h, size_t mailbox_capacity = 0)
+      : mailbox_(mailbox_capacity), state_(std::move(initial)),
+        handler_(std::move(h)), thr_([this] { loop(); }) {}
 
   void Send(Msg m) {
-    std::lock_guard lock(mu_);
-    queue_.push(Item{std::move(m), std::nullopt});
-    cv_.notify_one();
+    mailbox_.send(Item{std::move(m), std::nullopt});
   }
 
   std::future<State> Ask(Msg m) {
     std::promise<State> p;
     auto fut = p.get_future();
-    {
-      std::lock_guard lock(mu_);
-      queue_.push(Item{std::move(m), std::move(p)});
-    }
-    cv_.notify_one();
+    mailbox_.send(Item{std::move(m), std::move(p)});
     return fut;
+  }
+
+  ~Actor() {
+    mailbox_.close();
+    if (thr_.joinable())
+      thr_.join();
   }
 
   State snapshot() const {
@@ -125,28 +172,28 @@ public:
 
 private:
   void loop() {
-    std::unique_lock lock(mu_);
-    while (running_) {
-      cv_.wait(lock, [&] { return !queue_.empty() || !running_; });
-      while (!queue_.empty()) {
-        auto item = std::move(queue_.front());
-        queue_.pop();
-        State new_state = handler_(state_, item.m);
-        if (item.reply)
-          item.reply->set_value(new_state);
-        state_ = std::move(new_state);
+    for (;;) {
+      Item item;
+      try {
+        item = mailbox_.recv();
+      } catch (std::runtime_error const &) {
+        return;
       }
+      std::lock_guard lock(mu_);
+      State new_state = handler_(state_, item.m);
+      if (item.reply)
+        item.reply->set_value(new_state);
+      state_ = std::move(new_state);
     }
   }
 
   mutable std::mutex mu_;
-  std::condition_variable cv_;
-  std::queue<Item> queue_;
+  Channel<Item> mailbox_;
   State state_;
   Handler handler_;
-  bool running_;
   std::thread thr_;
 };
+
 
 template <class T> using AsyncResult = std::future<Result<T>>;
 
@@ -284,62 +331,6 @@ T par_reduce(ThreadPool &pool, std::vector<T> const &v, T init, F op) {
   return acc;
 }
 
-template <class T> class Channel {
-public:
-  explicit Channel(size_t capacity = 0) : capacity_(capacity), closed_(false) {}
-
-  void send(T t) {
-    std::unique_lock lock(mu_);
-    if (capacity_ > 0)
-      not_full_.wait(lock, [&] { return q_.size() < capacity_ || closed_; });
-
-    if (closed_)
-      throw std::runtime_error("send on closed Channel");
-
-    q_.push(std::move(t));
-    not_empty_.notify_one();
-  }
-
-  T recv() {
-    std::unique_lock lock(mu_);
-    not_empty_.wait(lock, [&] { return !q_.empty() || closed_; });
-    if (q_.empty())
-      throw std::runtime_error("recv on closed Channel");
-    T t = std::move(q_.front());
-    q_.pop();
-    if (capacity_ > 0)
-      not_full_.notify_one();
-    return t;
-  }
-
-  std::optional<T> try_recv() {
-    std::lock_guard lock(mu_);
-    if (q_.empty())
-      return std::nullopt;
-    T t = std::move(q_.front());
-    q_.pop();
-    if (capacity_ > 0)
-      not_full_.notify_one();
-    return t;
-  }
-
-  void close() {
-    {
-      std::lock_guard lock(mu_);
-      closed_ = true;
-    }
-    not_empty_.notify_all();
-    not_full_.notify_all();
-  }
-
-private:
-  size_t capacity_;
-  bool closed_;
-  std::queue<T> q_;
-  std::mutex mu_;
-  std::condition_variable not_empty_, not_full_;
-};
-
 template <class T> class Async {
 public:
   Async(std::future<T> fut)
@@ -368,4 +359,86 @@ public:
 private:
   std::shared_ptr<std::future<T>> shared_;
 };
+
+template <class T> AsyncResult<T> race(std::vector<AsyncResult<T>> futs) {
+  auto shared = std::make_shared<std::promise<Result<T>>>();
+  std::future<Result<T>> result = shared->get_future();
+  auto first_done = std::make_shared<std::atomic<bool>>(false);
+  for (auto &f : futs) {
+    std::async(std::launch::async,
+               [shared, first_done, f = std::move(f)]() mutable {
+                 Result<T> r;
+                 try {
+                   r = f.get();
+                 } catch (...) {
+                   return;
+                 }
+                 if (!first_done->exchange(true)) {
+                   try {
+                     shared->set_value(std::move(r));
+                   } catch (std::future_error const &) {
+                   }
+                 }
+               });
+  }
+  return result;
+}
+
+template <class T>
+AsyncResult<T> timeout(AsyncResult<T> fut, std::chrono::milliseconds ms) {
+  auto shared = std::make_shared<std::promise<Result<T>>>();
+  std::future<Result<T>> result = shared->get_future();
+  std::async(std::launch::async, [shared, f = std::move(fut)]() mutable {
+    Result<T> r;
+    try {
+      r = f.get();
+    } catch (...) {
+      return;
+    }
+
+    try {
+      shared->set_value(std::move(r));
+    } catch (std::future_error const &) {
+    }
+  });
+
+  std::async(std::launch::async, [shared, ms]() {
+    std::this_thread::sleep_for(ms);
+    try {
+      shared->set_value(err<T>("timeout"));
+    } catch (std::future_error const &) {
+    }
+  });
+  return result;
+}
+
+template <class T, class F>
+AsyncResult<T> retry(F make, size_t attempts, std::chrono::milliseconds delay) {
+  auto shared = std::make_shared<std::promise<Result<T>>>();
+  std::future<Result<T>> result = shared->get_future();
+  auto done = std::make_shared<std::atomic<bool>>(false);
+  std::async(std::launch::async, [shared, done, make, attempts, delay]() {
+    for (size_t i = 0; i < attempts && !done->load(); ++i) {
+      Result<T> r = make().get();
+      if (r.is_ok()) {
+        if (!done->exchange(true)) {
+          try {
+            shared->set_value(std::move(r));
+          } catch (std::future_error const &) {
+          }
+        }
+        return;
+      }
+      if (i + 1 < attempts)
+        std::this_thread::sleep_for(delay);
+    }
+    if (!done->load()) {
+      try {
+        shared->set_value(err<T>("retry exhausted"));
+      } catch (std::future_error const &) {
+      }
+    }
+    return result;
+  });
+}
 } // namespace fp
