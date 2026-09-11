@@ -339,4 +339,33 @@ private:
   std::mutex mu_;
   std::condition_variable not_empty_, not_full_;
 };
+
+template <class T> class Async {
+public:
+  Async(std::future<T> fut)
+      : shared_(std::make_shared<std::future<T>>(std::move(fut))) {}
+
+  T get() const { return shared_.get(); }
+
+  template <class F> auto then(F f) const -> Async<std::invoke_result_t<F, T>> {
+    using R = std::invoke_result_t<F, T>;
+    return Async<R>(
+        std::async(std::launch::async, [shared = shared_, f = std::move(f)] {
+          return f(shared.get());
+        }));
+  }
+
+  template <class F>
+  auto and_then(F f) const
+      -> Async<typename std::invoke_result_t<F, T>::value_type> {
+    using R = typename std::invoke_result_t<F, T>::value_type;
+    return Async<R>(
+        std::async(std::launch::async, [shared = shared_, f = std::move(f)] {
+          return f(shared.get()).get();
+        }));
+  }
+
+private:
+  std::shared_ptr<std::future<T>> shared_;
+};
 } // namespace fp
