@@ -43,6 +43,8 @@ reflects reality: implemented features are listed as done, and only the
 | [testing.md](testing.md) | No tests / no CI yet — P0 |
 | [bench.md](bench.md) | Infra done (`bench/`, `scripts/run_bench.sh`, forge scripts); cases for unimplemented features commented |
 | [meta.md](meta.md) | Header-sync guard script not yet created; README drift table outstanding |
+| [io.md](io.md) | **New** — `io.hpp` file IO (P0), `interact`/`lift_io` (P1); `grid.hpp` 2D helpers (P0), 3D/windows (P1); match (`case_`/`cond`/`when`/`otherwise`), `fp::ops`, `FP_TRY`/`FP_VARIANT` macros (P1), `unpack`/`value_or` (P1/P2) |
+| [foundation.md](foundation.md) | **New** — domain-agnostic primitives (ML/3D/UI/audio-motivated, no domain APIs): `map.hpp` (P0), `parse.hpp` (P0), `Stream` (P1), SPSC `RingBuffer` (P1), `Arena` (P1), `lift` (P1), `>>=` (P1), interop (P1), RNG/stats/`Lazy` (P2), perf (interleave/`map_into`/`small_vector`/`kahan_sum`/`Pool`/`CacheAligned`) (P1/P2) |
 
 ## Cross-cutting gaps (read first)
 
