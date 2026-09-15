@@ -504,8 +504,8 @@ fp::map(v, fp::negate);               // flip signs
 
 ## E. Macros (`macros.hpp`, opt-in — NOT in `all.hpp`)
 
-Two macros survive the "prefer named functions over macros" reframe: they do
-things the type system and expressions cannot. They live in a dedicated
+One macro survives the "prefer named functions over macros" reframe: it does
+something the type system and expressions cannot. It lives in a dedicated
 `macros.hpp` that `all.hpp` deliberately does **not** include — macros
 pollute, so they're opt-in.
 
@@ -537,48 +537,30 @@ expression; MSVC needs the lambda form (both behind `_MSC_VER`).
 #endif
 ```
 
-### E2. `FP_VARIANT` — sum-type definition [P1]
+### E2. Sum-type definition — dropped, use plain `std::variant`
 
-```
-FP_VARIANT(Shape,
-  (Circle, circle, double, radius),
-  (Rect,   rect,   double, w, double, h));
-```
+**Why dropped:** a `FP_VARIANT` macro cannot do the one thing that would make
+it worth it — auto-generate a lowercase `circle` factory from a `Circle` tag
+(the C preprocessor can't change identifier case, and can't split a
+whitespace-separated `type name` pair). Once those are spelled out, the macro
+adds no ergonomics over what plain C++ already gives.
 
-**Why:** The real "match is hard" problem is *defining* the sum type —
-payload structs, the `std::variant` alias, constructor functions. `match`
-itself is already clean; this kills the definition boilerplate. The one
-macro that generates types (which only a macro can do).
-
-**Expansion** — each arm is `(TypeName, factoryName, type, name, ...)`, i.e.
-the payload fields are flattened into `type, name` pairs:
+**The plain C++ way** — the payload structs and the `variant` alias are the
+only boilerplate, and `match`/`case_` (adt.hpp) already do dispatch:
 
 ```cpp
-// FP_VARIANT(Shape, (Circle, circle, double, radius), (Rect, rect, double, w, double, h))
-// expands to:
-struct Shape {
-  struct Circle { double radius; };
-  struct Rect   { double w; double h; };
-  std::variant<Circle, Rect> value;
+struct Circle { double radius; };
+struct Rect   { double w; double h; };
+using Shape = std::variant<Circle, Rect>;
 
-  static Shape circle(double radius) { return {{Circle{radius}}}; }
-  static Shape rect(double w, double h) { return {{Rect{w, h}}}; }
-};
-
-// usage:
-Shape s = Shape::circle(2.0);
-double area = fp::match(s.value,
-  fp::case_<Shape::Circle>([](auto c) { return 3.14159 * c.radius * c.radius; }),
-  fp::case_<Shape::Rect>  ([](auto r) { return r.w * r.h; }));
+Shape s = Circle{2.0};                 // construction is just brace-init
+double area = fp::match(s,
+  fp::case_<Circle>([](auto c) { return 3.14159 * c.radius * c.radius; }),
+  fp::case_<Rect>  ([](auto r) { return r.w * r.h; }));
 ```
 
-**Why the factory name and field commas are explicit:** the C preprocessor
-cannot change the case of an identifier (so `Circle` cannot be auto-downcased
-to `circle`) and cannot split a `type name` token pair on whitespace (so
-`double radius` must be written `double, radius` for the macro to recover the
-name `radius`). Both are therefore spelled out in the arm. Fields must be
-simple `type, name` pairs — a type containing a comma (`std::pair<int,int>`)
-needs a `using` alias first. Supports up to 8 arms, 4 fields per arm.
+No factories needed — `Circle{...}` *is* the constructor. Add `using`s or a
+nested namespace if the payload names need scoping.
 
 ---
 
@@ -606,10 +588,12 @@ needs a `using` alias first. Supports up to 8 arms, 4 fields per arm.
    function objects (`plus`, `gt`, ...) over `_1`/`_2` macros: autocomplete,
    refactoring, no namespace pollution. Placeholders are demoted to an
    optional last-resort header if ever needed.
-7. **Macros are opt-in and isolated.** Only `FP_TRY` and `FP_VARIANT`
-   survive; both live in `macros.hpp`, which `all.hpp` deliberately does not
-   include (macros pollute). `FP_TRY` handles GCC/Clang (`({ ... })`) and
-   MSVC (lambda) behind `_MSC_VER`.
+7. **Macros are opt-in and isolated.** Only `FP_TRY` survives; it lives in
+   `macros.hpp`, which `all.hpp` deliberately does not include (macros
+   pollute). `FP_TRY` handles GCC/Clang (`({ ... })`) and MSVC (lambda)
+   behind `_MSC_VER`. Sum-type definition stays plain `std::variant` + brace
+   init (see E2) — a `FP_VARIANT` macro can't auto-derive lowercase factories
+   from capitalized tags, so it buys nothing.
 8. **Grid shapes are `vector<vector<T>>`, no new ND container.** A
    `grid<T>` class with strides is a bigger design (ownership, slicing,
    row-major vs column-major); the flat-nested-vector representation is what

@@ -11,6 +11,7 @@ template <class E, class T> struct Either {
   std::variant<E, T> v;
 
   bool is_ok() const { return v.index() == 1; }
+  T &value() { return std::get<1>(v); }
   T const &value() const { return std::get<1>(v); }
   E const &error() const { return std::get<0>(v); }
 
