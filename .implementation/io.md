@@ -540,7 +540,9 @@ expression; MSVC needs the lambda form (both behind `_MSC_VER`).
 ### E2. `FP_VARIANT` — sum-type definition [P1]
 
 ```
-FP_VARIANT(Shape, (Circle, double radius), (Rect, double w, double h));
+FP_VARIANT(Shape,
+  (Circle, circle, double, radius),
+  (Rect,   rect,   double, w, double, h));
 ```
 
 **Why:** The real "match is hard" problem is *defining* the sum type —
@@ -548,11 +550,11 @@ payload structs, the `std::variant` alias, constructor functions. `match`
 itself is already clean; this kills the definition boilerplate. The one
 macro that generates types (which only a macro can do).
 
-**Target expansion** — lowercase factories avoid colliding with the payload
-type names:
+**Expansion** — each arm is `(TypeName, factoryName, type, name, ...)`, i.e.
+the payload fields are flattened into `type, name` pairs:
 
 ```cpp
-// FP_VARIANT(Shape, (Circle, double radius), (Rect, double w, double h))
+// FP_VARIANT(Shape, (Circle, circle, double, radius), (Rect, rect, double, w, double, h))
 // expands to:
 struct Shape {
   struct Circle { double radius; };
@@ -570,11 +572,13 @@ double area = fp::match(s.value,
   fp::case_<Shape::Rect>  ([](auto r) { return r.w * r.h; }));
 ```
 
-**Implementation note:** the macro internals are non-trivial — comma-in-type
-handling (`double w, double h`), the struct/`variant`/factory expansion, and
-tag-type registration for `case_`. Nail the exact preprocessor expansion
-against the test suite before relying on it; the *usage* above is the API
-contract.
+**Why the factory name and field commas are explicit:** the C preprocessor
+cannot change the case of an identifier (so `Circle` cannot be auto-downcased
+to `circle`) and cannot split a `type name` token pair on whitespace (so
+`double radius` must be written `double, radius` for the macro to recover the
+name `radius`). Both are therefore spelled out in the arm. Fields must be
+simple `type, name` pairs — a type containing a comma (`std::pair<int,int>`)
+needs a `using` alias first. Supports up to 8 arms, 4 fields per arm.
 
 ---
 
