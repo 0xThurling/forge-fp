@@ -1,8 +1,6 @@
 // Benchmark the SIMD module against scalar baselines.
-//
-// reduce/dot cases are compiled out until fp::reduce / fp::dot land
-// (see .implementation/simd.md #1/#2) — uncomment them afterwards.
 #include <fp/simd.hpp>
+#include <cmath>
 #include <numeric>
 #include <vector>
 
@@ -21,26 +19,26 @@ int main() {
   }
 
   // --- reduce ---
-  // bench::measure("std::accumulate", [&] {
-  //   double r = std::accumulate(a.begin(), a.end(), 0.0);
-  //   bench::keep(&r);
-  // });
-  // bench::measure("fp::reduce", [&] {
-  //   double r = fp::reduce(a);
-  //   bench::keep(&r);
-  // });
+  bench::measure("std::accumulate", [&] {
+    double r = std::accumulate(a.begin(), a.end(), 0.0);
+    bench::keep(&r);
+  });
+  bench::measure("fp::reduce", [&] {
+    double r = fp::reduce(a);
+    bench::keep(&r);
+  });
 
   // --- dot ---
-  // bench::measure("naive product-sum", [&] {
-  //   double r = 0.0;
-  //   for (std::size_t i = 0; i < a.size(); ++i)
-  //     r += a[i] * b[i];
-  //   bench::keep(&r);
-  // });
-  // bench::measure("fp::dot", [&] {
-  //   double r = fp::dot(a, b);
-  //   bench::keep(&r);
-  // });
+  bench::measure("naive product-sum", [&] {
+    double r = 0.0;
+    for (std::size_t i = 0; i < a.size(); ++i)
+      r += a[i] * b[i];
+    bench::keep(&r);
+  });
+  bench::measure("fp::dot", [&] {
+    double r = fp::dot(a, b);
+    bench::keep(&r);
+  });
 
   // --- map_inplace (tail included) ---
   std::printf("map_inplace (fp64, %zu elems, tail included)\n", a.size() + 3);
@@ -56,5 +54,18 @@ int main() {
   bench::measure("fp::map_inplace (*2+1)", [&] {
     fp::map_inplace(v, [](fp::vec<double> x) { return x * 2.0 + 1.0; });
     bench::keep(&v[0]);
+  });
+
+  // --- math: SIMD sqrt beats a libm sqrt per element (compiler can't vectorize) ---
+  std::printf("map_sqrt (fp64, %zu elems)\n", a.size());
+  auto w = a;
+  bench::measure("scalar loop (std::sqrt)", [&] {
+    for (auto& x : w)
+      x = std::sqrt(x);
+    bench::keep(&w[0]);
+  });
+  bench::measure("fp::map_sqrt", [&] {
+    fp::map_sqrt(w);
+    bench::keep(&w[0]);
   });
 }

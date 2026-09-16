@@ -60,10 +60,14 @@ Validation<T> check(Pred pred, std::string msg, T value) {
 }
 
 template <class T, class F>
-Validation<std::vector<std::invoke_result_t<F, T>>>
+  requires std::is_same_v<
+      std::invoke_result_t<F, T>,
+      Validation<typename std::invoke_result_t<F, T>::value_type>>
+Validation<std::vector<typename std::invoke_result_t<F, T>::value_type>>
 traverse(std::vector<T> const &v, F f) {
   using R = std::invoke_result_t<F, T>;
-  std::vector<R> values;
+  using U = typename R::value_type;
+  std::vector<U> values;
   std::vector<std::string> errors;
   for (auto const &x : v) {
     auto r = f(x);
@@ -75,7 +79,7 @@ traverse(std::vector<T> const &v, F f) {
     }
   }
   if (!errors.empty())
-    return invalid<std::vector<R>>(std::move(errors));
+    return invalid<std::vector<U>>(std::move(errors));
   return valid(std::move(values));
 }
 

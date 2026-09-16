@@ -2,8 +2,6 @@
 #include "fp/concurrent.hpp"
 #include <chrono>
 #include <cstddef>
-#include <experimental/bits/simd.h>
-#include <experimental/bits/simd_math.h>
 #include <experimental/simd>
 #include <type_traits>
 #include <vector>
@@ -13,22 +11,24 @@ template <class T> using vec = std::experimental::native_simd<T>;
 
 template <class T, class F> void map_inplace(std::vector<T> &data, F f) {
   using V = vec<T>;
-  std::size_t width = V::size();
+  constexpr std::size_t width = V::size();
   std::size_t n = data.size();
+  T *p = data.data();
   std::size_t i = 0;
 
   for (; i + width <= n; i += width) {
     V chunk;
-    chunk.copy_from(&data[i], std::experimental::element_aligned);
+    chunk.copy_from(p + i, std::experimental::element_aligned);
     chunk = f(chunk);
-    chunk.copy_to(&data[i], std::experimental::element_aligned);
+    chunk.copy_to(p + i, std::experimental::element_aligned);
   }
 
-  // Tail elements
+  // Tail elements — broadcast the scalar into a vector so f (a SIMD lambda)
+  // can be applied generically, then write back lane 0.
   for (; i < n; ++i) {
-    V v_single(data[i]);
+    V v_single(p[i]);
     v_single = f(v_single);
-    data[i] = v_single[0];
+    p[i] = v_single[0];
   }
 }
 
@@ -73,7 +73,7 @@ template <class T> T dot(std::vector<T> const &a, std::vector<T> const &b) {
   for (; i + lanes <= n; i += lanes) {
     Vec x, y;
     x.copy_from(&a[i], std::experimental::element_aligned);
-    x.copy_from(&b[i], std::experimental::element_aligned);
+    y.copy_from(&b[i], std::experimental::element_aligned);
     acc += x * y;
   }
   T total = 0;

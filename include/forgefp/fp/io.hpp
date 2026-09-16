@@ -2,6 +2,8 @@
 
 #include "fp/result.hpp"
 #include <fstream>
+#include <functional>
+#include <iostream>
 #include <iterator>
 #include <string_view>
 #include <type_traits>
@@ -42,11 +44,24 @@ inline Result<void> write_file(std::string const &path,
   return ok<void>();
 }
 
-template <class F>
-auto lift_io(F f) {
-    return [f = std::move(f)] (auto &&... args) -> Result<std::invoke_result_t<F, decltype(args)...>> {
-        using R = std::invoke_result_t<F, decltype(args)...>;
-        r
+template <class F> auto lift_io(F f) {
+  return [f = std::move(f)](auto &&...args)
+             -> Result<std::invoke_result_t<F, decltype(args)...>> {
+    using R = std::invoke_result_t<F, decltype(args)...>;
+    try {
+      return ok(f(std::forward<decltype(args)>(args)...));
+    } catch (std::exception const &e) {
+      return err<R>(e.what());
+    } catch (...) {
+      return err<R>("unknown IO error");
     }
+  };
+}
+
+inline void interact(std::function<std::string(std::string)> f) {
+  std::string in((std::istream_iterator<char>(std::cin)),
+                 std::istream_iterator<char>());
+
+  std::cout << f(std::move(in));
 }
 } // namespace fp

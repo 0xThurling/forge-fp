@@ -67,4 +67,9 @@ template <class T, class F>
 T value_or_lazy(std::optional<T> const &o, F fallback) {
   return or_else(o, std::move(fallback));
 }
+
+template <class T, class F>
+auto operator>>=(std::optional<T> const &o, F f) -> std::invoke_result_t<F, T> {
+  return fp::and_then(o, std::move(f));
+}
 } // namespace fp

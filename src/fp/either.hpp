@@ -8,6 +8,9 @@
 
 namespace fp {
 template <class E, class T> struct Either {
+  using value_type = T;
+  using error_type = E;
+
   std::variant<E, T> v;
 
   bool is_ok() const { return v.index() == 1; }
@@ -25,6 +28,9 @@ template <class E, class T> struct Either {
 };
 
 template <class E> struct Either<E, void> {
+  using value_type = void;
+  using error_type = E;
+
   std::variant<E, std::monostate> v;
 
   bool is_ok() const { return v.index() == 1; }
@@ -133,5 +139,10 @@ T const &expect(Either<E, T> const &e, char const *msg) {
 template <class E, class T>
 Either<E, T> ok_or(std::optional<T> const &o, E error) {
   return o ? Either<E, T>::ok(*o) : Either<E, T>::err(std::move(error));
+}
+
+template <class E, class T, class F>
+auto operator>>=(Either<E, T> const &e, F f) -> std::invoke_result_t<F, T> {
+  return fp::and_then(e, std::move(f));
 }
 } // namespace fp

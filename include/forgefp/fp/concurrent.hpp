@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -135,6 +136,46 @@ private:
   std::condition_variable not_empty_, not_full_;
 };
 
+template <class T> class RingBuffer {
+public:
+  explicit RingBuffer(size_t capacity) : cap_(1) {
+    while (cap_ < capacity)
+      cap_ <<= 1;
+    buf_.resize(cap_);
+  }
+
+  bool push(T t) {
+    size_t tail = tail_.load(std::memory_order_relaxed);
+    size_t head = head_.load(std::memory_order_acquire);
+    if (tail - head >= cap_)
+      return false;
+    buf_[tail & (cap_ - 1)] = std::move(t);
+    tail_.store(tail + 1, std::memory_order_release);
+    return true;
+  }
+
+  std::optional<T> try_pop() {
+    size_t head = head_.load(std::memory_order_relaxed);
+    size_t tail = tail_.load(std::memory_order_acquire);
+    if (head == tail)
+      return std::nullopt;
+    T t = std::move(buf_[head & (cap_ - 1)]);
+    head_.store(head + 1, std::memory_order_release);
+    return t;
+  }
+
+  size_t size() const {
+    size_t head = head_.load(std::memory_order_acquire);
+    size_t tail = tail_.load(std::memory_order_acquire);
+    return tail - head;
+  }
+
+private:
+  size_t cap_;
+  std::vector<T> buf_;
+  std::atomic<size_t> head_{0}, tail_{0};
+};
+
 template <class Msg, class State> class Actor {
   struct Item {
     Msg m;
@@ -235,7 +276,7 @@ public:
   }
 
   template <class F, class... Ts>
-  auto enqueue(F &&f, Ts &&...ts) -> std::future<std::invoke_result<F, Ts...>> {
+  auto enqueue(F &&f, Ts &&...ts) -> std::future<std::invoke_result_t<F, Ts...>> {
     using R = std::invoke_result_t<F, Ts...>;
     auto task = std::make_shared<std::packaged_task<R()>>(
         std::bind(std::forward<F>(f), std::forward<Ts>(ts)...));
@@ -287,23 +328,38 @@ template <class T, class F>
 std::vector<std::invoke_result_t<F, T>> par_map(ThreadPool &pool,
                                                 std::vector<T> const &v, F f) {
   using R = std::invoke_result_t<F, T>;
-  std::vector<R> out;
-  out.reserve(v.size());
-  std::vector<std::future<R>> futs;
-  futs.reserve(v.size());
-  for (auto const &x : v)
-    futs.push_back(pool.enqueue([f, x] { return f(x); }));
+  std::vector<R> out(v.size());
+  size_t n = v.size();
+  size_t threads = std::max<size_t>(1, pool.size());
+  size_t chunk = (n + threads - 1) / threads;
+  std::vector<std::future<void>> futs;
+  futs.reserve((n + chunk - 1) / chunk);
+  for (size_t s = 0; s < n; s += chunk) {
+    size_t e = std::min(n, s + chunk);
+    futs.push_back(pool.enqueue([&v, &out, f, s, e] {
+      for (size_t i = s; i < e; ++i)
+        out[i] = f(v[i]);
+    }));
+  }
   for (auto &fut : futs)
-    out.push_back(fut.get());
+    fut.get();
   return out;
 }
 
 template <class T, class F>
 void par_for_each(ThreadPool &pool, std::vector<T> const &v, F f) {
+  size_t n = v.size();
+  size_t threads = std::max<size_t>(1, pool.size());
+  size_t chunk = (n + threads - 1) / threads;
   std::vector<std::future<void>> futs;
-  futs.reserve(v.size());
-  for (auto const &x : v)
-    futs.push_back(pool.enqueue([f, x] { f(x); }));
+  futs.reserve((n + chunk - 1) / chunk);
+  for (size_t s = 0; s < n; s += chunk) {
+    size_t e = std::min(n, s + chunk);
+    futs.push_back(pool.enqueue([&v, f, s, e] {
+      for (size_t i = s; i < e; ++i)
+        f(v[i]);
+    }));
+  }
   for (auto &fut : futs)
     fut.get();
 }
@@ -336,13 +392,13 @@ public:
   Async(std::future<T> fut)
       : shared_(std::make_shared<std::future<T>>(std::move(fut))) {}
 
-  T get() const { return shared_.get(); }
+  T get() const { return shared_->get(); }
 
   template <class F> auto then(F f) const -> Async<std::invoke_result_t<F, T>> {
     using R = std::invoke_result_t<F, T>;
     return Async<R>(
         std::async(std::launch::async, [shared = shared_, f = std::move(f)] {
-          return f(shared.get());
+          return f(shared->get());
         }));
   }
 
@@ -352,7 +408,7 @@ public:
     using R = typename std::invoke_result_t<F, T>::value_type;
     return Async<R>(
         std::async(std::launch::async, [shared = shared_, f = std::move(f)] {
-          return f(shared.get()).get();
+          return f(shared->get()).get();
         }));
   }
 
@@ -365,21 +421,20 @@ template <class T> AsyncResult<T> race(std::vector<AsyncResult<T>> futs) {
   std::future<Result<T>> result = shared->get_future();
   auto first_done = std::make_shared<std::atomic<bool>>(false);
   for (auto &f : futs) {
-    std::async(std::launch::async,
-               [shared, first_done, f = std::move(f)]() mutable {
-                 Result<T> r;
-                 try {
-                   r = f.get();
-                 } catch (...) {
-                   return;
-                 }
-                 if (!first_done->exchange(true)) {
-                   try {
-                     shared->set_value(std::move(r));
-                   } catch (std::future_error const &) {
-                   }
-                 }
-               });
+    std::thread([shared, first_done, f = std::move(f)]() mutable {
+      Result<T> r;
+      try {
+        r = f.get();
+      } catch (...) {
+        return;
+      }
+      if (!first_done->exchange(true)) {
+        try {
+          shared->set_value(std::move(r));
+        } catch (std::future_error const &) {
+        }
+      }
+    }).detach();
   }
   return result;
 }
@@ -388,7 +443,7 @@ template <class T>
 AsyncResult<T> timeout(AsyncResult<T> fut, std::chrono::milliseconds ms) {
   auto shared = std::make_shared<std::promise<Result<T>>>();
   std::future<Result<T>> result = shared->get_future();
-  std::async(std::launch::async, [shared, f = std::move(fut)]() mutable {
+  std::thread([shared, f = std::move(fut)]() mutable {
     Result<T> r;
     try {
       r = f.get();
@@ -400,15 +455,15 @@ AsyncResult<T> timeout(AsyncResult<T> fut, std::chrono::milliseconds ms) {
       shared->set_value(std::move(r));
     } catch (std::future_error const &) {
     }
-  });
+  }).detach();
 
-  std::async(std::launch::async, [shared, ms]() {
+  std::thread([shared, ms]() {
     std::this_thread::sleep_for(ms);
     try {
       shared->set_value(err<T>("timeout"));
     } catch (std::future_error const &) {
     }
-  });
+  }).detach();
   return result;
 }
 
@@ -417,7 +472,7 @@ AsyncResult<T> retry(F make, size_t attempts, std::chrono::milliseconds delay) {
   auto shared = std::make_shared<std::promise<Result<T>>>();
   std::future<Result<T>> result = shared->get_future();
   auto done = std::make_shared<std::atomic<bool>>(false);
-  std::async(std::launch::async, [shared, done, make, attempts, delay]() {
+  std::thread([shared, done, make, attempts, delay]() {
     for (size_t i = 0; i < attempts && !done->load(); ++i) {
       Result<T> r = make().get();
       if (r.is_ok()) {
@@ -438,7 +493,7 @@ AsyncResult<T> retry(F make, size_t attempts, std::chrono::milliseconds delay) {
       } catch (std::future_error const &) {
       }
     }
-    return result;
-  });
+  }).detach();
+  return result;
 }
 } // namespace fp
