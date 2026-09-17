@@ -230,15 +230,15 @@ Vec3 rot_x(Vec3 v, double t) {
 
 double speed = 0.1;
 int axis = 0;   // 0 = Y, 1 = X
-// ... in the key-drain loop:
+// ... in the key-drain loop — ordered guards, not a switch:
 while (auto k = keys.try_recv()) {
-    switch (*k) {
-        case 'q': running = false; break;
-        case '+': speed += 0.02;   break;
-        case '-': speed -= 0.02;   break;
-        case 'x': axis = 1;        break;
-        case 'y': axis = 0;        break;
-    }
+    fp::cond(*k,
+        fp::when(fp::eq('q'), [&](char) { running = false; }),
+        fp::when(fp::eq('+'), [&](char) { speed += 0.02; }),
+        fp::when(fp::eq('-'), [&](char) { speed -= 0.02; }),
+        fp::when(fp::eq('x'), [&](char) { axis = 1; }),
+        fp::when(fp::eq('y'), [&](char) { axis = 0; }),
+        fp::otherwise([](char) {}));
 }
 // rotation picks axis:
 auto rot = [&](Vec3 v) { return axis == 0 ? rot_y(v, t) : rot_x(v, t); };
@@ -247,8 +247,12 @@ auto verts = fp::map(cube, rot);
 
 **Verify:** `+`/`-` visibly change the spin rate; `x`/`y` change the axis.
 
-**Concept — the loop state grows.** State is still just values (`speed`, `axis`,
-`t`); keys are transitions over that state.
+**Concept — ordered guards, not a `switch`.** `cond` evaluates `when(pred, f)`
+arms in order, first match wins, and `otherwise` is the catch-all. `fp::eq('q')`
+is the named predicate "equal to `q`", so each line reads as a rule. This is the
+`cond` from [pattern matching](../../.docs/pattern-matching.md) — the predicate-
+based sibling of `match` (which is for *types*). The loop state is still just
+values (`speed`, `axis`, `t`); keys are transitions over that state.
 
 ## Stage 9 — Multiple shapes with `match`
 
