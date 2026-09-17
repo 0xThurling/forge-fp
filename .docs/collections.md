@@ -3,9 +3,7 @@
 The collection layer transforms, filters, folds, and zips sequences. Most
 functions take `std::vector<T> const&` (`vec.hpp`); `ranges.hpp` provides the
 same names (and a few extras) generically over any range — arrays, `std::span`,
-views, `std::list`, etc. Because the `ranges.hpp` overloads are constrained to
-`std::ranges::range`, both headers can be included together and overload
-resolution picks the right one.
+views, `std::list`, etc.
 
 ```cpp
 #include <fp/all.hpp>
@@ -13,6 +11,40 @@ resolution picks the right one.
 std::vector<int> v = {1, 2, 3, 4};
 auto doubled = fp::map(v, [](int x) { return x * 2; });   // {2,4,6,8}
 ```
+
+## Two principles behind the API
+
+**1. Pure — you always get a fresh collection.** No combinator mutates its
+input (the `*_inplace` SIMD variants are the one documented exception, and they
+live in `simd.hpp`). This is what makes pipelines safe: `filter(sort(v), …)`
+can't clobber `v`, and the same input can feed several branches.
+
+**2. Collection → collection, not element → element.** You describe *what the
+whole collection becomes* (`map`, `filter`, `fold`), never write the loop. The
+loop, the index, the `push_back`, and the off-by-ones are the library's job.
+
+## `vec.hpp` vs `ranges.hpp`
+
+- **`vec.hpp`** functions take `std::vector<T> const&`. Use these when you
+  hold a vector — the common case.
+- **`ranges.hpp`** functions are constrained on `std::ranges::range`, so they
+  accept *anything* iterable: raw arrays, `std::span`, `std::views::*` results,
+  `std::list`, your own containers.
+
+Because the ranges overloads are constrained, both headers can be included
+together (they are, via `all.hpp`) and overload resolution picks the right one
+per argument type.
+
+```cpp
+#include <fp/ranges.hpp>
+
+int arr[] = {1, 2, 3};
+auto v = fp::map(arr, fp::plus(1));    // works on a raw array -> {2,3,4}
+auto v2 = fp::to_vector(arr);          // materialize anything to vector
+```
+
+**Rule of thumb:** if you hold a `std::vector`, either header works. If you hold
+anything else, include `ranges.hpp` and pass it directly.
 
 ## Mapping
 
@@ -32,6 +64,9 @@ auto evens = fp::filter_map(std::vector<int>{1, 2, 3, 4},
                             [](int x) { return x % 2 == 0 ? std::optional<int>{x} : std::nullopt; });
 // {2, 4}
 ```
+
+`map` keeps the shape (same length); `flat_map` changes it (one-to-many);
+`filter_map` is `map` + "drop the empties" — the three cover most transforms.
 
 ## Filtering and slicing
 
@@ -54,6 +89,9 @@ fp::tail(v);                                        // {2,3,4}
 fp::init(v);                                        // {1,2,3}
 ```
 
+Note the `head`/`last` return `optional` — an empty vector has no first/last
+element, and `optional` says so honestly instead of a `-1`/`throw`.
+
 ## Folding
 
 ```cpp
@@ -68,6 +106,9 @@ auto running = fp::scan(v, 0, [](int a, int b) { return a + b; });    // {1,3,6,
 fp::sum(v);        // 10
 fp::product(v);    // 24
 ```
+
+`fold_left` is the general reducer; `sum`/`product` are its common cases; `scan`
+is "fold that keeps the journey".
 
 ## Predicates
 
@@ -99,6 +140,8 @@ auto [a2, b2] = fp::unzip(z);
 // enumerate: attach indices
 for (auto& [i, x] : fp::enumerate(v)) { /* i, x */ }
 ```
+
+`zip` truncates to the shorter input. `enumerate` is "zip with the indices".
 
 ## Grouping, sorting, reshaping
 
@@ -140,21 +183,6 @@ fp::range(0, 10, 3);             // {0,3,6,9}
 fp::replicate(3, std::string("x"));  // {"x","x","x"}
 ```
 
-## `ranges.hpp` extras
-
-In addition to the range-generic overloads of everything above, `ranges.hpp`
-adds `to_vector(r)` (materialize any range to `vector`):
-
-```cpp
-int arr[] = {1, 2, 3};
-auto v2 = fp::map(arr, fp::plus(1));     // works on a raw array -> {2,3,4}
-auto v3 = fp::to_vector(arr);            // {1,2,3}
-```
-
-**Rule of thumb:** if you hold a `std::vector`, either header works. If you hold
-anything else (array, `std::span`, a `std::views::filter` result), include
-`ranges.hpp` and pass it directly.
-
 ## Pairing with `fp::ops`
 
 The named operators (see [Function composition](composition.md)) make these
@@ -166,3 +194,6 @@ fp::map(v, fp::plus(1));                           // {2,3,4,5}
 fp::fold_left(v, 0, fp::plus);                     // 10
 fp::map(v, fp::times(2));                          // {2,4,6,8}
 ```
+
+The point-free form is worth it when the operation is common (`+1`, `>0`);
+for anything one-off, a lambda is clearer.

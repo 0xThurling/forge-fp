@@ -11,8 +11,25 @@ template <class T>
 using Parser = std::function<Result<std::pair<T, std::string_view>>(std::string_view)>;
 ```
 
-`Result` is the failure carrier (see [ADTs](adts.md)): `ok({value, leftover})`
-on success, `err("why")` on failure.
+## Why parser combinators over a hand-rolled state machine
+
+A handwritten parser is usually a loop plus a cursor plus a pile of
+`if (s[i] == ...)` checks, and it breaks the moment the grammar grows a new
+branch. Parser combinators invert that:
+
+- **A parser is a value**, so you can store it, pass it around, and *combine* it
+  (`map`, `and_then`, `alt`, `sep_by`) like any other value.
+- **Each combinator is one grammar rule.** `sep_by(item, sep)` *is* "a
+  separated list"; you compose rules instead of tracking a cursor.
+- **Failure is a `Result`**, so parse errors flow through the same error channel
+  as everything else — no exceptions, no sentinel positions.
+
+The two workhorses to internalize:
+
+- `map(p, f)` — succeed where `p` succeeds, transforming the value.
+- `and_then(p, f)` — receive the value, then decide which parser runs next.
+  This is how *context* flows through a grammar (parse the key, then use it to
+  parse the value).
 
 ## Core combinators
 
@@ -88,6 +105,10 @@ copyable `std::function`) so they can reuse it after the `=`.
 - `sep_by(p, sep)` — one or more `p` separated by `sep`; a trailing separator
   is an error (there must be an item after each separator).
 - `many`/`some` — greedy repetition; `many` also matches the empty input.
+
+The `map`/`and_then`/`alt` trio here mirrors the ADTs' `map`/`and_then`/`or_else`
+(see [ADTs](adts.md)) — a parser is a `Result`-returning function, and the
+combinators are the same idea lifted onto functions.
 
 ## Errors
 

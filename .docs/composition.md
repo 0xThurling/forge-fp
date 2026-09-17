@@ -3,6 +3,11 @@
 This layer is about *combining functions* rather than data. Headers:
 `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp`.
 
+The idea: once functions are values, you can compose them, partially apply
+them, name the common ones, and cache their results — the same way the
+collection layer composes data transforms. A pipeline of named functions reads
+like a description of the computation, not a nest of call sites.
+
 ## `compose` and `pipe`
 
 ```cpp
@@ -18,7 +23,10 @@ g(3);   // (3+1)*2 = 8
 ```
 
 `compose` is also variadic (`fp::compose(f, g, h) = f(g(h(x)))`) via
-`combinators.hpp`.
+`combinators.hpp`. The only difference between the two is direction:
+`compose(f, g)` = "do `g` then `f`" (math order), `pipe(f, g)` = "do `f` then
+`g`" (execution order). Pick the one that reads naturally; they're the same
+under a reversal.
 
 ## The `|` pipe (`into` / `out` / `tap`)
 
@@ -33,8 +41,13 @@ auto result = fp::out(fp::into(3)
 fp::out(fp::into(3) | fp::tap([](int x) { log(x); }) | [](int x) { return x + 1; });
 ```
 
+This is the library's flagship ergonomic: the value flows one stage per line.
 If a stage returns `void`, the value passes through unchanged (useful with
 `tap`). `into` decays its argument; `out` moves the final value out.
+
+**`|` vs `pipe` vs `compose`:** `|` is for *applying* to a value now; `pipe`/
+`compose` are for building a reusable function to apply later. `into(x) | f | g`
+is sugar for `pipe(f, g)(x)`.
 
 ## `curry` and `uncurry`
 
@@ -51,7 +64,8 @@ un(1, 2, 3);      // 6
 ```
 
 `curry` returns a callable that either invokes `f` (once it has enough
-arguments) or binds more arguments. `uncurry` does the reverse.
+arguments) or binds more arguments. This is how `fp::ops` gets its `plus(1)`
+form — currying is partial application made general.
 
 ## `combinators.hpp` — function plumbing
 
@@ -81,6 +95,10 @@ fp::map(pairs, fp::second(fp::str::to_upper));
 // pipe_with: lift a variadic consumer into a pipe
 fp::pipe_with(fp::into(v), fp::fold_left, 0, fp::plus);
 ```
+
+`fix` is the one that deserves a second look: it gives a lambda a name for
+itself (`recur`), so recursion doesn't need `std::function` plumbing — pair it
+with `memoize` for cached recursion (see below).
 
 ## `ops.hpp` — named operators (replace tiny lambdas)
 
@@ -114,6 +132,11 @@ Full list:
 | logic | `and_`, `or_`, `not_` |
 | unary | `negate`, `increment`, `decrement` |
 
+**Why named operators over lambdas:** `fp::plus(1)` is a *value* with a name —
+it autocompletes, refactors, and reads as a sentence. A lambda
+`[](int x){ return x+1; }` is a body you have to parse. For the small,
+recurring operations, the name wins; for one-off logic, use a lambda.
+
 **Argument order** is the one subtle rule:
 
 - **Arithmetic/logic curry on the left operand:** `plus(1)(x) == 1 + x`.
@@ -143,4 +166,10 @@ fast(5);      // cached
 
 `memoize<Arg>(f)` caches results in an `unordered_map<Arg, Ret>` keyed on the
 single argument. Note: it must wrap the *recursive* callable itself if you want
-to memoize a recursion (combine with `fix` manually).
+to memoize a recursion — combine with `fix` manually:
+
+```cpp
+auto fib = fp::memoize<int>(fp::fix([](auto recur, int n) -> long long {
+    return n < 2 ? n : recur(n - 1) + recur(n - 2);
+}));
+```

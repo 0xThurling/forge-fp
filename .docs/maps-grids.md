@@ -2,8 +2,8 @@
 
 ## `map.hpp` — associative-container combinators
 
-Helpers for consuming and transforming `std::map<K, V>`. (`vec.hpp`'s
-`group_by` produces an `unordered_map`; these let you consume one.)
+Helpers for consuming and transforming `std::map<K, V>`. `vec.hpp`'s
+`group_by` produces an `unordered_map`; these let you consume one.
 
 ```cpp
 #include <fp/map.hpp>
@@ -36,6 +36,12 @@ fp::values(m);  // {1,2,3}
 auto remap = fp::to_map<std::string, int>({{"x", 9}, {"y", 8}});
 ```
 
+**Why these exist:** the library already *produces* maps (`group_by`), so
+without these, that output is a dead end — you'd hand-roll a `find`/`emplace`
+loop to consume it. Each helper is that loop, named: `lookup` is the safe
+`find`, `merge_with` is the collision-handling union, `keys`/`values` are the
+common projections.
+
 Notes:
 
 - `lookup` takes the key type exactly (`K const&`); pass a `std::string` for
@@ -45,7 +51,8 @@ Notes:
 
 ## `grid.hpp` — 2D/3D grids and index space
 
-Grids are `std::vector<std::vector<T>>` (row-major) — no new container.
+Grids are `std::vector<std::vector<T>>` (row-major) — no new container, so they
+compose with every `vec.hpp` combinator.
 
 ```cpp
 #include <fp/grid.hpp>
@@ -77,5 +84,9 @@ fp::cartesian_product(std::vector<int>{1,2}, std::vector<char>{'a','b'});
 // {{1,'a'},{1,'b'},{2,'a'},{2,'b'}}
 ```
 
-`tabulate` + `cartesian_product` are the building blocks for declarative
-render/index passes — feed the result into `map` and the grid writes itself.
+**Why grids matter:** index-space work (render passes, image kernels, matrix
+transpose) is nested `for (i) for (j)` loops — the one shape `vec.hpp`/`ranges.hpp`
+(which are flat) don't cover. `map2d`/`transpose`/`for_each_index` turn those
+nested loops into one call; `flatten` hands the result back to the flat
+combinators. `tabulate` + `cartesian_product` are the declarative
+nested-loop makers.

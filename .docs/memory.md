@@ -8,6 +8,14 @@ realtime-safe allocation path (no `malloc`/`free` churn, no fragmentation).
 #include <fp/arena.hpp>
 ```
 
+**Why an arena:** hot loops and realtime threads (audio render callbacks, frame
+loops) allocate many short-lived objects. `malloc`/`free` per object is the
+cost, and fragmentation is the long-term problem. An arena does neither: a
+pointer bump allocates, a `reset()` reclaims the whole thing. The same pattern
+serves per-frame scratch (3D scenes), per-block buffers (audio), per-batch
+intermediates (ML), and `thread_local` arenas so workers never contend on the
+global allocator.
+
 ## API
 
 ```cpp
@@ -46,6 +54,8 @@ auto scaled = fp::with_arena(1 << 20, [](fp::Arena& a) {
 
 ## The contract (read this)
 
+The arena is only safe under a discipline; `with_arena` enforces it for you:
+
 - **Scoped, not shared.** The arena must live inside one scope and never escape
   it. Return *values* (copied out before `reset()`), never arena pointers.
 - **`reset()` does not destroy.** `alloc`/`make` construct; nothing is
@@ -56,6 +66,10 @@ auto scaled = fp::with_arena(1 << 20, [](fp::Arena& a) {
   `std::vector`; you route hot stages through the arena yourself. For
   `std::pmr::vector` consumers, use `std::pmr::monotonic_buffer_resource` over
   the same buffer.
+
+These rules exist so an arena stays a *pure* performance tool: under them, the
+enclosing function is still pure (same input → same output), which is what
+keeps it composable with `map`/`pipe`/`par_map`.
 
 ## When to use it
 

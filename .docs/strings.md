@@ -9,6 +9,13 @@ by value (so you can move in) and return a new `std::string` (or
 using namespace fp::str;
 ```
 
+**Why this module exists:** the stdlib's string ops (`substr`, `find`, `getline`)
+are low-level primitives that force index bookkeeping and `std::string::npos`
+checks. `fp::str` wraps the common cases as pure functions, so string code
+reads as a pipeline instead of a cursor dance. The two deltas from the stdlib
+are the *pure* signatures (input by value, output by value) and `to_int`/
+`to_double` returning `Result` instead of throwing.
+
 ## Case
 
 ```cpp
@@ -42,6 +49,9 @@ join(std::vector<std::string>{"a","b","c"}, ", ");   // "a, b, c"
 join(std::vector<int>{1,2,3}, "-");                  // "1-2-3"  (range overload)
 ```
 
+`split`/`join` are inverses; both `split` overloads (char and string delimiter)
+and both `join` overloads (vector and range) exist.
+
 ## Prefixes, suffixes, replacement
 
 ```cpp
@@ -72,3 +82,6 @@ auto d = to_double("3.14");      // Result<double> ok(3.14)
 // compose with the ADT machinery:
 to_int("42") >>= [](int i) { return fp::ok(i * 2); };   // Result<int> ok(84)
 ```
+
+This is the bridge into [the ADTs](adts.md): a string that might not be a
+number is a `Result`, so "parse then use" is `>>=` instead of try/catch.

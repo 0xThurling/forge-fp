@@ -18,6 +18,13 @@ g++ -std=c++20 -O2 -march=native -I src app.cpp
 `fp::vec<T>` is `std::experimental::native_simd<T>` — the widest vector for the
 target CPU.
 
+**Why SIMD here:** the compiler auto-vectorizes simple arithmetic loops on its
+own, but it *can't* vectorize a call to `std::sqrt`/`std::exp` (those are
+opaque libm calls). `simd.hpp` exposes the vector intrinsics as *functions you
+map with*, so the math cases — where the win is — are one line. The mental
+model is the same as `vec.hpp`: your lambda just receives a whole vector
+instead of one element.
+
 ## Mapping
 
 ```cpp
@@ -28,7 +35,8 @@ auto out = fp::map_to(v, [](fp::vec<double> x) { return x * x; });    // new vec
 ```
 
 The lambda receives a **whole vector** (several lanes) and returns a vector.
-`map_inplace` writes back in place; `map_to` allocates a new vector.
+`map_inplace` writes back in place; `map_to` allocates a new vector. The scalar
+tail (the elements that don't fill a full vector) is handled for you.
 
 ```cpp
 // fixed-width with a masked tail
@@ -75,15 +83,18 @@ lambda to each chunk.
 auto picked = fp::gather(v, std::vector<size_t>{2, 0, 4});  // {v[2], v[0], v[4]}
 ```
 
-## What to expect
+## What to expect (and why)
 
-- **`reduce` / `dot`** beat `std::accumulate` / a naive loop (typically 1.5–4×).
+- **`reduce` / `dot`** beat `std::accumulate` / a naive loop (typically 1.5–4×)
+  — reductions don't auto-vectorize as cleanly, so the manual version wins.
 - **`map_sqrt` / `map_exp`** are where SIMD shines — the compiler can't
   auto-vectorize a libm `sqrt` call, so a SIMD intrinsic is ~3× faster.
 - **`map_inplace` on trivial arithmetic** (`x*2+1`) usually only *matches* the
   compiler's own auto-vectorized scalar loop — GCC already vectorizes that
-  pattern. SIMD pays off for math functions and reductions.
+  pattern, so there's nothing left to win. SIMD pays off for math functions and
+  reductions, not for the cases the compiler already handles.
 
 Alignment note: `map_inplace`/`map_to` use `element_aligned` (safe for any
 `std::vector` data); `vector_aligned` would require a custom 32/64-byte-aligned
-allocator and is not used by default.
+allocator and is not used by default. On modern CPUs, aligned vs unaligned
+loads are effectively free anyway.

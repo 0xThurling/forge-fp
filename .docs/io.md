@@ -30,6 +30,13 @@ int main() {
 }
 ```
 
+**Why `Result`-returning I/O:** the stdlib's `fstream` reports failure through
+its `fail()`/`bad()` flags, which are easy to forget to check. Wrapping the
+open/read/write in a `Result` makes "did the file work?" part of the return
+type — you can't ignore it, and the failure composes with the rest of the
+library. The design rule is "IO errors are `Result` strings, never exceptions"
+(the same error model as everything else).
+
 ## Composing with the ADT machinery
 
 Because the results are `Result`, they compose with everything in
@@ -48,6 +55,9 @@ auto total = fp::read_lines("numbers.txt")
 if (total.is_ok())
     std::cout << "sum = " << total.value() << "\n";
 ```
+
+`read_lines(path) | and_then(parse_csv)` is the whole "load a file and process
+it" pipeline in one expression.
 
 ## Notes
 

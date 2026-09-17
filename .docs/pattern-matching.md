@@ -7,6 +7,21 @@ guards, and `match` overloads for `std::optional` and `Result`.
 #include <fp/adt.hpp>
 ```
 
+## Why `match` instead of `if (holds_alternative(...))`
+
+Extracting a value from `std::variant` without help means either `std::visit`
+(with a hand-written visitor) or a chain of `holds_alternative` + `get` — both
+easy to get wrong, and the compiler can't check you've covered every case.
+`match` fixes both:
+
+- **Exhaustive, by the compiler.** Miss an alternative and it won't compile —
+  add a variant to the type and every `match` over it breaks until you cover it.
+- **O(1).** Dispatch is a jump on the variant index, not a linear `if` chain.
+
+`cond` is the *different* tool: an ordered, first-match-wins predicate chain.
+The names are deliberately separate so you never confuse "exhaustive over
+types" (`match`) with "ordered over predicates" (`cond`).
+
 ## `match` + `case_` — exhaustive variant dispatch
 
 ```cpp
@@ -27,8 +42,6 @@ double area = fp::match(s,
   that every alternative is covered (missing one = compile error).
 - `case_<T>(f)` binds an arm to alternative type `T` and gives it a name to
   write `f(c)` instead of `[](Circle const& c){...}`.
-
-Dispatch is a jump on the variant index — O(1), not a linear scan.
 
 ## `overload` — a callable combining several lambdas
 
@@ -72,8 +85,8 @@ std::string kind = fp::cond(x,
 - `cond(v, arms...)` — evaluates arms in order, first match wins; throws if none
   match (so end with `otherwise`).
 
-Every arm receives the value. `cond` is deliberately *not* `match`: `match` is
-exhaustive + O(1); `cond` is an ordered conditional chain.
+Every arm receives the value. Unlike `match`, `cond` is a *linear scan* and is
+*not* exhaustive — that's the trade for being able to ask arbitrary predicates.
 
 ## `value_or` and `unpack`
 

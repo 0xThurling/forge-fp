@@ -9,6 +9,25 @@ pull/push `Stream<T>` transform surface. Both are header-only and dependency-fre
 #include <fp/stream.hpp>   // Stream
 ```
 
+## The one distinction that organizes this module
+
+Concurrency here is split into two concerns, deliberately kept separate:
+
+1. **Parallelism** — *split a pure computation* across threads
+   (`par_map`, `par_reduce`, `par_for_each`). These are **pure**: same result,
+   just faster. They need no locks because each worker owns its slice of the
+   output.
+
+2. **Communication** — *move data between threads* (`Channel`, `RingBuffer`,
+   `Actor`, futures, `Stream`). These are the explicit, bounded places where
+   threads interact, and they're the only places with synchronization.
+
+The rule: parallelize pure work with the parallel combinators; share state only
+through the communication primitives. Don't thread a shared `vector` through
+`par_for_each` and write into it from all workers — that's a data race the
+library won't stop you from writing, but the primitives are designed so you
+don't need to.
+
 ## Parallel combinators
 
 Two families: standalone (`std::async`-based, take an optional thread count) and
@@ -52,8 +71,9 @@ auto y = ch.try_recv();         // optional<int>, non-blocking
 ch.close();                     // wake waiters; recv throws after drain
 ```
 
-`Channel` is the multi-thread control path (mutex + condvar). For a realtime
-producer/consumer that must not block on a mutex, use `RingBuffer`.
+`Channel` is the multi-thread control path (mutex + condvar). Use it for
+general message passing between any number of threads. For a realtime
+producer/consumer that must not block on a mutex, use `RingBuffer` instead.
 
 ## `RingBuffer<T>` — lock-free SPSC
 
@@ -66,7 +86,9 @@ auto z  = rb.try_pop();                 // optional<int>, nullopt when empty
 size_t n = rb.size();
 ```
 
-One thread pushes, another pops. Don't share it between more than two threads.
+The SPSC contract is the point: exactly **two** threads (one push, one pop),
+and you busy-spin on full/empty. In exchange you get *no mutex*, so a render
+or audio thread never blocks. `Channel` = control path; `RingBuffer` = data path.
 
 ## `Actor<Msg, State>` — mailbox + handler
 
@@ -81,7 +103,9 @@ long long total = counter.snapshot();     // read current state
 // destructor closes the mailbox and joins the worker thread
 ```
 
-`Ask` returns the *new* state after the message is applied.
+The handler is a *pure* function `State(State, Msg)`; the actor serializes
+messages through it, so the state is only ever touched by one thread at a time.
+You mutate state by sending messages, not by sharing memory.
 
 ## Async combinators (`std::future<Result<T>>`)
 
@@ -144,8 +168,10 @@ fp::Stream<int> from_ch(ch);           // reads via try_recv
 from_ch.subscribe([&](int x) { /* ... */ });
 ```
 
-`map`/`filter` return a new `Stream` (lazy); `subscribe` runs the pipeline to
-completion.
+`map`/`filter` return a new `Stream` (lazy — nothing runs until you
+`subscribe`); `subscribe` runs the pipeline to completion. `Stream` is the
+*transform surface*: one `map`/`filter` vocabulary over any item source,
+synchronous or threaded.
 
 ## Which tool for which job
 

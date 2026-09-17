@@ -15,17 +15,91 @@ you learn one you know all four.
 `Either<std::vector<std::string>, T>` — so the `Either` combinators work on all
 of them.
 
-## The shared combinator vocabulary
+## Why error-as-value instead of exceptions
 
-Every ADT provides:
+Exceptions are a *separate* control flow: a thrown error jumps out of your code
+to some distant `catch`. `Result`/`Either` make the failure a *value* in the
+normal flow:
 
-| Combinator | Meaning |
+```cpp
+// exceptions: the happy path is invisible; where does the error go?
+int n = std::stoi(s);            // may throw, caught who-knows-where
+
+// error as value: the failure is part of the return type
+fp::Result<int> n = fp::str::to_int(s);   // you *must* look at is_ok()/value()
+```
+
+Consequences you get for free:
+
+- **The type documents failure.** A function returning `Result<int>` advertises
+  that it can fail; a `int` function cannot.
+- **Errors are first-class.** You can `map` over them, collect them into
+  vectors, log them, forward them — same tools as any value.
+- **No control-flow surprises.** There is no hidden `throw`; the only way to
+  get a bare `T` is `unwrap`/`expect`, which are explicitly the escape hatches.
+- **Composes into pipelines.** `a >>= b >>= c` reads as a straight line.
+
+The trade-off: you write `>>=`/`and_then` where exceptions would let you write
+plain calls. ForgeFP's answer is that this is *worth it* — the boilerplate is
+one operator, and the failure paths become explicit.
+
+## The three combinators (the whole vocabulary)
+
+Every ADT has these; learn them once:
+
+| Combinator | Signature shape | What it does |
+|---|---|---|
+| `map(x, f)` | `F<T> -> F<U>` | transform the value, keep the wrapper/failure |
+| `and_then(x, f)` | `F<T> -> F<U>` (f returns `F<U>`) | like `map`, but the *next* step can also fail |
+| `or_else(x, f)` | `F<T> -> T` | recover from failure with a default/function |
+
+The distinction between `map` and `and_then` is the one thing to internalize:
+
+```cpp
+fp::Result<int> r = fp::ok(21);
+
+// map: f is a *total* function (always succeeds)
+fp::map(r, [](int x) { return x * 2; });              // ok(42)
+
+// and_then: f is *partial* (returns a Result, may fail)
+fp::and_then(r, [](int x) { return fp::ok(x + 1); }); // ok(22)
+
+// what map can't do: a step that itself fails
+//   map would nest the Results; and_then flattens them.
+```
+
+Two useful laws to sanity-check your code:
+
+- `map(x, id) == x` — mapping the identity changes nothing.
+- `and_then(ok(a), f) == f(a)` and `and_then(err(e), f) == err(e)` — bind
+  unwraps a success and short-circuits a failure.
+
+## The bind operator `>>=`
+
+`x >>= f` is exactly `and_then(x, f)`. It exists so fallible chains read
+left-to-right:
+
+```cpp
+fp::Result<int> r = fp::str::to_int(s)
+    >>= [](int x) { return x >= 0 ? fp::ok(x) : fp::err<int>("negative"); }
+    >>= [](int x) { return fp::ok(x * 2); };
+```
+
+Each `>>=` feeds the previous value into the next step, short-circuiting on the
+first error. This is the library's "do-notation".
+
+## Which ADT when?
+
+| Situation | Use |
 |---|---|
-| `map(x, f)` | transform the success value, keep the failure |
-| `and_then(x, f)` | `f` returns a new ADT; short-circuits on failure |
-| `or_else(x, f)` | recover from a failure with a default / function |
-| `is_ok()` / `value()` / `error()` | inspect (members on `Either`/`Result`/`Validation`) |
-| `operator>>=` | sugar for `and_then` |
+| A value or a message (the default) | `Result<T>` |
+| Two outcomes of arbitrary types | `Either<E, T>` |
+| A value that may be absent (no error message) | `std::optional<T>` |
+| Collect *every* problem at once (forms, config) | `Validation<T>` |
+| No success value, just "worked or failed" | `Result<void>` |
+
+Rule of thumb: **`Result` unless you have a reason not to.** `optional` for pure
+absence, `Validation` for aggregation, `Either` for generic/two-typed cases.
 
 ## `Either<E, T>` — a generic two-outcome value
 

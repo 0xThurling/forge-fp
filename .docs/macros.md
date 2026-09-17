@@ -10,6 +10,12 @@ from the enclosing function).
 #include <fp/macros.hpp>
 ```
 
+**Why it's an exception:** the library prefers named functions over macros
+(macros pollute the global namespace and have no scope). But `FP_TRY` does
+something no function can — `return` from the *caller's* function. That
+early-return-on-error is the one ergonomic a function can't provide, so it
+earns a macro, kept isolated and opt-in.
+
 ## `FP_TRY` — the `?` operator
 
 `FP_TRY(expr)` evaluates `expr` (a `Result<T>`); on error it **returns** an
@@ -27,7 +33,16 @@ Result<int> parse_and_add(std::string const& a, std::string const& b) {
 ```
 
 This is do-notation: a chain of fallible steps reads as a straight line instead
-of nested `if (!r.is_ok()) return err(...)`.
+of nested `if (!r.is_ok()) return err(...)`. Without it, the equivalent is:
+
+```cpp
+Result<int> r = str::to_int(a);
+if (!r.is_ok())
+    return err<int>(r.error());
+int x = r.value();
+```
+
+one block *per fallible step* — `FP_TRY` collapses each block to one line.
 
 ## Implementation notes
 
@@ -42,14 +57,7 @@ of nested `if (!r.is_ok()) return err(...)`.
 
 ## When *not* to use it
 
-If you'd rather not pull in the macro, the equivalent is one line:
-
-```cpp
-Result<int> r = str::to_int(a);
-if (!r.is_ok())
-    return err<int>(r.error());
-int x = r.value();
-```
-
-Prefer the explicit form in headers you distribute; use `FP_TRY` in application
-code where the chaining is worth the macro.
+If you'd rather not pull in the macro, the explicit form above is always
+available and is what you should use in headers you distribute. Use `FP_TRY` in
+application code where the chaining is worth the macro, and keep it out of
+library headers so consumers don't inherit a macro from you.
