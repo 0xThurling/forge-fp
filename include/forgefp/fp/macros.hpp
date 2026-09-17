@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fp/result.hpp"
+#include "forgefp/fp/result.hpp"
 #include <type_traits>
 
 #if defined(_MSC_VER)

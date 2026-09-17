@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-#include "result.hpp"
+#include "forgefp/fp/result.hpp"
 
 namespace fp {
 template <class T, class F>

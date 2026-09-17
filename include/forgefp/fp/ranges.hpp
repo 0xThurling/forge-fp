@@ -1,5 +1,5 @@
 #pragma once
-#include "fp/vec.hpp"
+#include "forgefp/fp/vec.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <optional>

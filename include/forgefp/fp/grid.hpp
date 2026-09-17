@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fp/either.hpp"
+#include "forgefp/fp/either.hpp"
 #include <cstddef>
 #include <type_traits>
 #include <vector>
