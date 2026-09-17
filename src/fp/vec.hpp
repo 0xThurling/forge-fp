@@ -135,6 +135,7 @@ std::vector<T> sort_by(std::vector<T> const &v, F key_fn) {
   auto out = v;
   std::ranges::sort(
       out, [&](T const &a, T const &b) { return key_fn(a) < key_fn(b); });
+  return out;
 }
 
 template <class T, class F> bool all(std::vector<T> const &v, F pred) {

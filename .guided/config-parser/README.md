@@ -1,12 +1,12 @@
-# Project 2 — Config Parser & Validator
+# Project 2 — Config Parser & Validator (CodeCrafters-style)
 
-Build a parser for a small `key=value` config file, then *validate* the result.
-This project introduces **parser combinators** and **accumulating validation**.
+Build a parser for `key=value` config files, stage by stage, then validate the
+result. Each stage adds grammar and ends with a **Verify** check.
 
-**Modules:** `parse.hpp`, `validation.hpp`, `result.hpp`, `string.hpp`.
+**Modules:** `parse.hpp`, `validation.hpp`, `result.hpp`, `string.hpp`, `io.hpp`, `map.hpp`.
 **Compile:** `g++ -std=c++20 -I src -o app app.cpp && ./app config.txt`
 
-Create `config.txt`:
+`config.txt`:
 
 ```
 port=8080
@@ -16,17 +16,14 @@ debug=false
 
 ---
 
-## Step 1 — A primitive parser (`satisfy`)
+## Stage 1 — The `satisfy` primitive
 
-The library ships `char_`/`string_` (match a specific char/literal). The
-one primitive it doesn't ship is "match any char satisfying a predicate" —
-which is trivial to build and unlocks everything else. Add it yourself:
+Goal: "match any char satisfying `pred`" — the seed of the whole grammar.
 
 ```cpp
 #include <fp/parse.hpp>
 #include <string_view>
 
-// match any single char where pred(c) is true
 template <class P>
 fp::Parser<char> satisfy(P pred) {
     return fp::Parser<char>([pred](std::string_view s)
@@ -38,160 +35,184 @@ fp::Parser<char> satisfy(P pred) {
 }
 ```
 
-**Concept — a parser is a value:** `Parser<T>` is
-`std::function<Result<pair<T, string_view>>(string_view)>` — it consumes input
-and returns the value *plus the leftover*. `satisfy` is the seed the whole
-grammar grows from.
+**Verify:** compiles. (`satisfy` is `template`, so it's only checked when used.)
 
-## Step 2 — Build `word` and `token` from `satisfy`
+**Concept — a parser is a value.** `Parser<T>` is
+`std::function<Result<pair<T, string_view>>(string_view)>`. `satisfy` returns
+one; everything below combines them.
 
-`some(p)` repeats a parser one-or-more times; `map` transforms the collected
-result. Letters make an identifier; letters+digits make a value token.
+## Stage 2 — `letter` and `alnum` classes
+
+Goal: character classes from `satisfy`.
 
 ```cpp
-#include <fp/parse.hpp>
 #include <cctype>
-#include <iostream>
-
-// (satisfy from step 1)
-
-auto letter = satisfy([](char c) { return std::isalpha(static_cast<unsigned char>(c)); });
-auto alnum  = satisfy([](char c) { return std::isalnum(static_cast<unsigned char>(c)); });
-
-// "one or more letters/digits" -> a std::string
-auto word  = fp::map(fp::some(letter), [](std::vector<char> const& cs) { return std::string(cs.begin(), cs.end()); });
-auto token = fp::map(fp::some(alnum),  [](std::vector<char> const& cs) { return std::string(cs.begin(), cs.end()); });
-
-int main() {
-    auto r = fp::run(word, "port");
-    std::cout << (r.is_ok() ? r.value() : "failed") << "\n";   // "port"
-}
+auto letter = satisfy([](char c) { return std::isalpha((unsigned char)c); });
+auto alnum  = satisfy([](char c) { return std::isalnum((unsigned char)c); });
 ```
 
-**Concept — composition over character classes:** instead of a `char_` per
-letter, you build `satisfy(isalpha)` once and get every identifier for free via
-`some` + `map`.
+**Verify:** `fp::run(letter, "a")` is `ok('a')`, `fp::run(letter, "1")` fails.
 
-## Step 3 — `key=value` with context
+**Concept — composition over enumeration.** One `satisfy` gives you *any* class —
+no `char_` per character.
 
-`and_then` is bind: parse the key, *remember it*, parse the `=`, then parse the
-value. The inner lambda closes over the `token` parser.
+## Stage 3 — `word` and `token` (a run of a class)
+
+Goal: `some(p)` repeats a parser; `map` collects the result into a string.
 
 ```cpp
-#include <fp/parse.hpp>
-#include <cctype>
-#include <iostream>
+auto word  = fp::map(fp::some(letter), [](std::vector<char> const& cs) { return std::string(cs.begin(), cs.end()); });
+auto token = fp::map(fp::some(alnum),  [](std::vector<char> const& cs) { return std::string(cs.begin(), cs.end()); });
+```
 
-// (satisfy, letter, alnum, word, token from steps 1-2)
+**Verify:** `fp::run(word, "port")` is `ok("port")`; `fp::run(token, "8080")` is `ok("8080")`.
 
+**Concept — `map` on a parser.** Succeed where the parser succeeds, transform
+the value — the same `map` idea as `Result`, lifted to functions.
+
+## Stage 4 — A `key=value` pair
+
+Goal: parse `key`, remember it, parse `=`, parse `value`, pair them.
+
+```cpp
 auto pair = fp::and_then(word, [](std::string k) {
     return fp::map(fp::and_then(fp::string_("="), [](std::string) { return token; }),
                    [k](std::string v) { return std::pair{k, v}; });
 });
-
-int main() {
-    auto r = fp::run(pair, "port=8080");
-    if (r.is_ok())
-        std::cout << r.value().first << " -> " << r.value().second << "\n";
-}
 ```
 
-**Concept — context flows through `and_then`:** the key is captured and used
-*after* the value is parsed — the parser analogue of `Result`'s `>>=`.
+**Verify:** `fp::run(pair, "port=8080")` is `ok({"port", "8080"})`.
 
-## Step 4 — A full config: pairs separated by newlines
+**Concept — `and_then` threads context.** The key `k` is captured and used after
+the value is parsed — the parser analogue of `>>=`.
 
-`sep_by` handles "one or more `pair`, separated by `sep`". Parse newline-
-separated pairs into a `vector<pair<string,string>>`.
+## Stage 5 — A whole file: pairs separated by newlines
+
+Goal: `sep_by` turns "one or more `pair`, separated by `sep`" into a parser.
 
 ```cpp
-#include <fp/parse.hpp>
-#include <fp/io.hpp>
-#include <cctype>
-#include <iostream>
-
-// (satisfy, letter, alnum, word, token, pair from steps 1-3)
-
 auto config = fp::sep_by(pair, fp::string_("\n"));
-
-int main() {
-    auto text = fp::read_file("config.txt");
-    if (!text.is_ok()) { std::cerr << text.error() << "\n"; return 1; }
-
-    auto r = fp::run(config, text.value());
-    if (!r.is_ok()) { std::cerr << "parse error: " << r.error() << "\n"; return 1; }
-    for (auto& [k, v] : r.value())
-        std::cout << k << " = " << v << "\n";
-}
 ```
 
-**Concept — a grammar is composition:** `sep_by(pair, newline)` *is* "a config
-file". Each combinator is one grammar rule; no cursor, no `for` loop.
+**Verify:** `fp::run(config, "port=8080\nhost=localhost")` is `ok({{"port","8080"},{"host","localhost"}})`.
 
-## Step 5 — Validate the config
+**Concept — a grammar is composition.** Each combinator is one rule; the whole
+file is `sep_by(pair, newline)`. No cursor, no loop.
 
-Parsing says "this is well-formed". Now validate *meaning*: `port` must be a
-number, `debug` must be `true`/`false`. Use `Validation` to collect **all**
-errors at once.
+## Stage 6 — Comments and blank lines
+
+Goal: tolerate `# comment` and empty lines. The simplest correct way is to
+*preprocess* the text — strip comments and blanks — before parsing:
+
+```cpp
+#include <fp/string.hpp>
+
+std::string strip_comments(std::string const& text) {
+    std::vector<std::string> keep;
+    for (auto const& line : fp::str::lines(text)) {
+        auto t = fp::str::trim(line);
+        if (t.empty() || fp::str::starts_with(t, "#")) continue;
+        keep.push_back(line);
+    }
+    return fp::str::join(keep, "\n");
+}
+
+// then: auto r = fp::run(config, strip_comments(text));
+```
+
+**Verify:** a config with `# comment` lines and blank lines parses the same as
+the clean version.
+
+**Concept — separate concerns.** Parsing the *grammar* and tolerating the *noise*
+are two jobs; doing the noise in a pure preprocessing step keeps the parser
+itself simple. (Doing it *inside* the parser with `alt`/`optional` is a harder
+but worthwhile exercise — see the extensions.)
+
+## Stage 7 — Sections
+
+Goal: group pairs under `[section]` headers.
+
+```cpp
+auto section = fp::map(fp::and_then(fp::string_("["), [](std::string) {
+    return fp::and_then(word, [](std::string name) {
+        return fp::map(fp::string_("]"), [name](std::string) { return name; });
+    });
+}), [](auto s) { return s; });
+```
+
+**Verify:** parse `[server]\nport=8080` and confirm you can remember the current
+section name (thread it through `and_then`).
+
+**Concept — context again.** Sections are context that applies to the pairs that
+follow — `and_then` carries it.
+
+## Stage 8 — Validate: types
+
+Goal: parsing says "well-formed"; now check *meaning*. `port` must be an int,
+`debug` must be `true`/`false`.
 
 ```cpp
 #include <fp/all.hpp>
-#include <iostream>
 
 fp::Validation<int> require_int(std::string const& key, std::string const& v) {
     auto r = fp::str::to_int(v);
     return r.is_ok() ? fp::valid(r.value()) : fp::invalid(key + " must be an integer");
 }
-
-int main() {
-    // (pretend this came from the parser in step 4)
-    std::vector<std::pair<std::string, std::string>> pairs = {
-        {"port", "8080"}, {"host", "localhost"}, {"debug", "false"}};
-
-    auto port  = require_int("port", pairs[0].second);
-    auto host  = fp::check([](std::string const& h) { return !h.empty(); },
-                           "host must not be empty", pairs[1].second);
-    auto debug = fp::check([](std::string const& d) { return d == "true" || d == "false"; },
-                           "debug must be true/false", pairs[2].second);
-
-    auto validated = fp::combine(
-        [](int p, std::string h, std::string d) { return std::make_tuple(p, h, d); },
-        port, host, debug);
-
-    if (!validated.is_ok()) {
-        for (auto const& e : validated.error()) std::cerr << e << "\n";
-        return 1;
-    }
-    std::cout << "config OK\n";
-}
 ```
 
-**Concept — accumulate, don't stop:** `Validation` collects every error
-(`port must be an integer`, `debug must be true/false`, …) so the user sees them
-all at once, unlike `Result` which reports the first.
+**Verify:** `require_int("port", "abc")` has `error() == {"port must be an integer"}`.
+
+**Concept — accumulate errors.** `Validation`'s error side is a
+`vector<string>`; `combine` collects *every* failure, unlike `Result`'s first.
+
+## Stage 9 — Validate: required keys
+
+Goal: report missing keys.
+
+```cpp
+auto m = fp::to_map<std::string, std::string>(pairs);   // vector<pair> -> map
+for (auto const& key : {"port", "host", "debug"})
+    if (!fp::lookup(m, std::string(key)))
+        /* collect "missing key" error */;
+```
+
+**Verify:** a config missing `port` reports `"missing key port"`.
+
+**Concept — maps compose with validation.** `to_map`/`lookup` (from `map.hpp`)
+turn the parsed pairs into a queryable structure; absence becomes a `Validation`
+error.
+
+## Stage 10 — Typed accessors
+
+Goal: a clean `Config` object with `get_int`/`get_string`/`get_bool`.
+
+```cpp
+struct Config {
+    std::map<std::string, std::string> values;
+    fp::Result<int> get_int(std::string const& k) const {
+        auto it = fp::lookup(values, k);
+        return it ? fp::str::to_int(*it) : fp::err<int>("missing " + k);
+    }
+};
+```
+
+**Verify:** `cfg.get_int("port")` is `ok(8080)`; `cfg.get_int("nope")` is an error.
+
+**Concept — a value-level API.** The parser produces plain data; the accessors
+add typed, `Result`-returning queries on top. Clean separation.
 
 ---
 
-## 🏆 Challenge
+## 🏆 Extensions
 
-Extend the grammar and the validator:
+1. **Quoted values** — support `key="hello world"` (parse the `"..."` literal).
+2. **Array values** — `ports=1,2,3` → `vector<int>` (reuse `sep_by` inside the value).
+3. **Duplicate-key detection** — report "duplicate key `port`" instead of
+   silently overwriting (check before `emplace`).
+4. **Environment-variable interpolation** — `${HOME}` in a value expands from
+   the process env (parse the `${...}` then look up).
+5. **Round-trip** — write the validated `Config` back out (`fp::io::write_file`
+   + `fp::str::join`).
 
-1. **Richer identifiers** — allow `_` and `-` in keys (extend `alnum`/`letter`
-   predicates), and allow `.` in values (so `3.14` parses).
-2. **Comments and blank lines** — ignore `# comment` lines and empty lines
-   (hint: parse an *optional* comment after each pair, and tolerate leading/
-   trailing newlines).
-3. **Sections** — support `[server]` sections that group the pairs that follow
-   (hint: `and_then` to remember the current section name).
-4. **Required keys** — report "missing key `port`" if a required key is absent
-   (hint: after parsing, `to_map` the pairs, then `lookup` the required keys and
-   build a `Validation` from what's missing).
-
-**Hints:**
-- `alt(a, b)` tries `a`, then backtracks to `b` on failure.
-- `optional(p)` never fails — `ok(nullopt)` if `p` doesn't match.
-- `fp::to_map<K,V>(pairs)` and `fp::lookup(m, k)` (from `map.hpp`) return
-  `optional<V>`.
-
-The goal is a parser + validator for *your* config format. Make it parse
-something you'd actually use.
+Make it parse *your* config format, and make the errors good enough that a
+user can fix their file from the message alone.

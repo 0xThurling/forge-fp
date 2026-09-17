@@ -19,6 +19,7 @@ opt-in `simd.hpp` and `macros.hpp`.
 | [Strings](strings.md) | `string.hpp` | `split`/`join`/`trim`/parsing/… in `fp::str` |
 | [Parsing](parsing.md) | `parse.hpp` | parser combinators |
 | [File I/O](io.md) | `io.hpp` | `read_file` / `read_lines` / `write_file` |
+| [Input](input.md) | `input.hpp` | reading stdin/streams as `Result`/`Stream`/`Channel` |
 | [Concurrency](concurrency.md) | `concurrent.hpp`, `stream.hpp` | thread pool, channels, actors, futures, `Stream` |
 | [Memory](memory.md) | `arena.hpp` | the bump allocator |
 | [SIMD](simd.md) | `simd.hpp` | vectorized `map`/`reduce`/`dot`/math |
@@ -68,7 +69,7 @@ Three recurring shapes dominate the library:
 | `adt.hpp`, `either.hpp`, `result.hpp`, `maybe.hpp`, `validation.hpp` | `fp` | no |
 | `vec.hpp`, `ranges.hpp`, `map.hpp`, `grid.hpp` | `fp` | no |
 | `string.hpp` | `fp::str` | no |
-| `parse.hpp`, `io.hpp`, `arena.hpp`, `stream.hpp` | `fp` | no |
+| `parse.hpp`, `io.hpp`, `input.hpp`, `arena.hpp`, `stream.hpp` | `fp` | no |
 | `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp` | `fp` | no |
 | `concurrent.hpp` | `fp` | no |
 | `simd.hpp` | `fp` | yes — `#include` it explicitly (not in `all.hpp`) |

@@ -8,6 +8,7 @@
 #include "curry.hpp"
 #include "either.hpp"
 #include "grid.hpp"
+#include "input.hpp"
 #include "io.hpp"
 #include "map.hpp"
 #include "maybe.hpp"

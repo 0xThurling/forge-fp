@@ -1,18 +1,16 @@
-# Project 5 — Memo Lab
+# Project 5 — Memo Lab (CodeCrafters-style)
 
-Build a small toolkit for **dynamic programming** using `memoize` and `fix`.
-This project introduces **recursion without a name**, **memoization**, and
-**higher-order functions**.
+Build a dynamic-programming toolkit from `fix` and `memoize`, one stage at a
+time. Each stage solves a harder recurrence and ends with a **Verify** check.
 
-**Modules:** `memoize.hpp`, `combinators.hpp`, `curry.hpp`.
+**Modules:** `memoize.hpp`, `combinators.hpp`, `curry.hpp`, `vec.hpp`.
 **Compile:** `g++ -std=c++20 -I src -o app app.cpp && ./app`
 
 ---
 
-## Step 1 — Recursion needs a name (`fix`)
+## Stage 1 — Recursion needs a name (`fix`)
 
-A lambda can't call itself (it has no name). `fix` gives it one: it hands your
-function a `recur` callable as its first argument.
+Goal: write Fibonacci as a lambda that can call itself.
 
 ```cpp
 #include <fp/combinators.hpp>
@@ -26,118 +24,186 @@ int main() {
 }
 ```
 
-**Concept — the Y combinator:** `fix` is the Y combinator. It lets you write
-recursion *without* `std::function` plumbing. `recur` is your function's own
-name, provided at call time.
+**Verify:** `fib(10) == 55`.
 
-## Step 2 — Memoize it (exponential → linear)
+**Concept — the Y combinator.** `fix` hands your function a `recur` callable as
+its first argument, so a lambda can recurse without `std::function`.
 
-`fib` above is exponential: `fib(40)` recomputes the same subproblems a
-billion times. `memoize` caches results, turning it linear.
+## Stage 2 — Memoize it (exponential → linear)
+
+Goal: cache results so each subproblem is solved once.
 
 ```cpp
 #include <fp/all.hpp>
-#include <iostream>
 
 int main() {
     auto fib = fp::memoize<int>(fp::fix([](auto recur, int n) -> long long {
         return n < 2 ? n : recur(n - 1) + recur(n - 2);
     }));
-    std::cout << fib(90) << "\n";   // 2880067194370816120 — instant now
+    std::cout << fib(90) << "\n";   // 2880067194370816120 — instant
 }
 ```
 
-**Concept — memoization:** trade memory for time. Each distinct input is
-computed once; the rest are cache hits. `memoize<Arg>(f)` keys a
-`unordered_map<Arg, Ret>` on the single argument. The trick: `memoize` wraps the
-*recursive* callable itself, so every sub-call goes through the cache.
+**Verify:** `fib(90)` returns quickly (without memoize, `fib(90)` would take
+longer than the age of the universe).
 
-## Step 3 — Coin change (min coins)
+**Concept — memoization.** `memoize<Arg>(f)` keys an `unordered_map<Arg, Ret>` on
+the single argument. Wrap the *recursive* callable itself, so every sub-call
+goes through the cache.
 
-With fixed denominations, "min coins to make amount `n`" is a **single-argument**
-DP, so it fits `memoize<int>` directly.
+## Stage 3 — Climbing stairs
+
+Goal: `ways(n)` = ways to climb `n` steps taking 1 or 2 at a time.
 
 ```cpp
-#include <fp/all.hpp>
-#include <iostream>
-#include <limits>
+auto ways = fp::memoize<int>(fp::fix([](auto recur, int n) -> long long {
+    return n <= 1 ? 1 : recur(n - 1) + recur(n - 2);
+}));
+// ways(4) == 5: 1111, 112, 121, 211, 22
+```
 
+**Verify:** `ways(4) == 5`.
+
+**Concept — the recurrence is the program.** State the recurrence, wrap it in
+`fix` + `memoize`, and it's done. No DP table.
+
+## Stage 4 — Coin change: minimum coins
+
+Goal: min coins to make `amount` from `{1,5,10,25}`.
+
+```cpp
 constexpr int kCoins[] = {1, 5, 10, 25};
 
-int main() {
-    auto min_coins = fp::memoize<int>(fp::fix([](auto recur, int amount) -> int {
-        if (amount == 0) return 0;
-        int best = std::numeric_limits<int>::max();
-        for (int c : kCoins)
-            if (c <= amount) best = std::min(best, recur(amount - c));
-        return best == std::numeric_limits<int>::max() ? best : best + 1;
-    }));
-
-    std::cout << "min coins for 41 = " << min_coins(41) << "\n";   // 4 (25+10+5+1)
-}
+auto min_coins = fp::memoize<int>(fp::fix([](auto recur, int amount) -> int {
+    if (amount == 0) return 0;
+    int best = 1'000'000;
+    for (int c : kCoins)
+        if (c <= amount) best = std::min(best, recur(amount - c));
+    return best + 1;
+}));
+// min_coins(41) == 4  (25 + 10 + 5 + 1)
 ```
 
-**Concept — DP is recursion + memoization:** the recurrence (`1 + min(recur(n-c))`)
-is the *recursive* formulation of the problem; `memoize` makes it efficient. You
-never write the DP table by hand.
+**Verify:** `min_coins(41) == 4`.
 
-## Step 4 — Curry to fix a parameter, then memoize
+**Concept — single-argument DP.** With *fixed* denominations, the state is just
+the amount, so it fits `memoize<int>` directly.
 
-Some DP problems have a parameter you want to *fix* (e.g. the coin set, or a
-capacity). `curry` binds it first, leaving a single-argument function to
-memoize.
+## Stage 5 — Coin change: number of ways
+
+Goal: *combinations* (not permutations) that sum to `amount`. This needs the
+coin *index* too, so encode the pair as one key.
 
 ```cpp
-#include <fp/all.hpp>
-#include <iostream>
-
-// min coins for `amount` given a coin *set* (multi-argument recurrence)
-int main() {
-    auto min_coins_with = [](std::vector<int> const& coins, int amount) -> int {
-        // a fresh memoized, single-arg solver per coin set
-        auto solve = fp::memoize<int>(fp::fix([&](auto recur, int n) -> int {
-            if (n == 0) return 0;
-            int best = 1000000;
-            for (int c : coins) if (c <= n) best = std::min(best, recur(n - c));
-            return best + 1;
-        }));
-        return solve(amount);
-    };
-
-    auto us_min = fp::curry(min_coins_with)(std::vector<int>{1, 5, 10, 25});
-    std::cout << us_min(41) << "\n";   // 4
-}
+auto count_ways = fp::memoize<int>(fp::fix([](auto recur, int state) -> long long {
+    int amount = state / 4;      // decode: 4 denominations
+    int idx    = state % 4;
+    if (amount == 0) return 1;
+    if (idx < 0)    return 0;
+    long long skip  = recur((amount) * 4 + (idx - 1));   // don't use coin idx
+    long long take  = kCoins[idx] <= amount ? recur((amount - kCoins[idx]) * 4 + idx) : 0;
+    return skip + take;
+}));
+// count_ways(5 * 4 + 3) == 2  (five pennies, or one nickel)
 ```
 
-**Concept — partial application:** `curry(f)(arg1)` produces "f with `arg1`
-already filled in". You fix the coin set once, then treat the result as a
-single-argument function. This is how multi-argument problems become
-single-argument ones that `memoize` can handle.
+**Verify:** `count_ways(5 * 4 + 3) == 2`.
+
+**Concept — encoding a pair as a key.** `memoize` keys on one argument; a
+two-variable state `(amount, idx)` becomes `amount * K + idx`. This is the
+manual DP-table-indexing step, made explicit.
+
+## Stage 6 — Longest increasing subsequence
+
+Goal: length of the longest increasing subsequence ending at index `i`.
+
+```cpp
+std::vector<int> seq = {10, 9, 2, 5, 3, 7, 101, 18};
+
+auto lis = fp::memoize<int>(fp::fix([&](auto recur, int i) -> int {
+    int best = 1;
+    for (int j = 0; j < i; ++j)
+        if (seq[j] < seq[i]) best = std::max(best, recur(j) + 1);
+    return best;
+}));
+
+// overall answer: max over all end indices
+int answer = *fp::maximum(fp::map(fp::range(0, (int)seq.size()), lis));
+// answer == 4   (2, 3, 7, 101)
+```
+
+**Verify:** `answer == 4`.
+
+**Concept — recursion over indices.** The state is the index `i`; `recur(j)`
+solves the subproblem. `memoize` dedups the overlapping `recur` calls.
+
+## Stage 7 — Edit distance (two arguments)
+
+Goal: min edits (insert/delete/replace) to turn `a` into `b`. Two indices →
+encode `(i, j)` as `i * (m+1) + j`.
+
+```cpp
+std::string a = "kitten", b = "sitting";
+size_t m = a.size(), n = b.size();
+
+auto dist = fp::memoize<size_t>(fp::fix([&](auto recur, size_t key) -> size_t {
+    size_t i = key / (n + 1), j = key % (n + 1);
+    if (i == m) return n - j;                 // insert the rest of b
+    if (j == n) return m - i;                 // delete the rest of a
+    if (a[i] == b[j]) return recur((i + 1) * (n + 1) + (j + 1));
+    return 1 + std::min({
+        recur(i * (n + 1) + (j + 1)),          // insert
+        recur((i + 1) * (n + 1) + j),          // delete
+        recur((i + 1) * (n + 1) + (j + 1))});  // replace
+}));
+
+// dist(0 * (n+1) + 0) == 3
+```
+
+**Verify:** `dist(0) == 3`.
+
+**Concept — two-dimensional state.** The trick from stage 5 generalizes: any
+multi-argument DP becomes single-argument by packing the tuple into one key.
+
+## Stage 8 — Curry a parameter, then memoize
+
+Goal: fix a parameter (the coin set, or a capacity) with `curry`, leaving a
+single-argument function to memoize.
+
+```cpp
+auto min_coins_with = [](std::vector<int> const& coins, int amount) -> int {
+    auto solve = fp::memoize<int>(fp::fix([&](auto recur, int n) -> int {
+        if (n == 0) return 0;
+        int best = 1'000'000;
+        for (int c : coins) if (c <= n) best = std::min(best, recur(n - c));
+        return best + 1;
+    }));
+    return solve(amount);
+};
+
+auto us_min = fp::curry(min_coins_with)(std::vector<int>{1, 5, 10, 25});
+// us_min(41) == 4
+```
+
+**Verify:** `us_min(41) == 4`, and `fp::curry(min_coins_with)(std::vector<int>{1,2,5})(9) == 3`.
+
+**Concept — partial application.** `curry(f)(arg1)` produces "f with arg1
+fixed". Fix the coin set once, then memoize the single-argument remainder.
 
 ---
 
-## 🏆 Challenge
+## 🏆 Extensions
 
-Implement one (or more) of these from scratch, memoizing along the way:
+1. **0/1 knapsack** — max value fitting capacity `W` (two-variable: encode
+   `(item_index, capacity)` as a key).
+2. **Longest common subsequence** — LCS of two strings (same key-encoding).
+3. **Rod cutting** — max revenue for a rod of length `n` given per-length prices.
+4. **A timing harness** — measure `fib(30)` with and without `memoize` to feel
+   the difference (use `std::chrono`).
+5. **A `memoize2` helper** — write your own two-argument memoizer (a
+   `unordered_map<pair<A,B>, R>` with a custom hash) so you don't hand-encode
+   keys.
 
-1. **Climbing stairs** — `ways(n)` = number of ways to climb `n` steps taking 1
-   or 2 at a time. (`ways(0) = 1`, `ways(n) = ways(n-1) + ways(n-2)`.)
-2. **Count-the-ways coin change** — `ways(amount)` = number of *combinations* of
-   `{1,5,10,25}` that sum to `amount` (this needs the coin *index* too — see
-   hint below).
-3. **Longest increasing subsequence** — length of the longest strictly
-   increasing subsequence of a vector (hint: a recursion on the *index*).
-4. **Knapsack (0/1)** — max value fitting a capacity `W`, given weights/values
-   (the classic two-parameter DP — curry the capacity *or* the item index).
-
-**Hints:**
-- For two-parameter problems, the recurrence is `f(i, j)`. To use `memoize<int>`,
-  encode the pair as a single key (e.g. `i * (j_max + 1) + j`) or curry one
-  parameter (as in Step 4) — note `memoize` keys on *one* argument.
-- `fix` hands you `recur`; call it on the *smaller* subproblem, then combine.
-- `fp::maximum(v)` / `fp::minimum(v)` return `optional` — deref with `*` or
-  `value_or`.
-
-The goal is to *feel* the recursion → memoization transformation: write the
-recurrence first, then add `memoize` and watch it go from exponential to
-polynomial.
+The goal: internalize *recurrence → memoize* so it becomes mechanical, and
+learn the two tricks that make `memoize` general — curry a parameter, or pack
+the state into one key.
