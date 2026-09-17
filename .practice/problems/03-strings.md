@@ -2,14 +2,23 @@
 
 **Headers:** `<fp/string.hpp>` (namespace `fp::str`), `<fp/result.hpp>`.
 
-`split`, `join`, `trim`, case helpers, and `to_int`/`to_double` (which return
-`Result` — the first taste of the ADTs).
+## What this module is about
+
+String processing is where C++'s default tools (`substr`, `find`, `getline`)
+force the most index bookkeeping. `fp::str` wraps the common cases as pure
+functions: `split`/`join`/`trim`/case helpers, and — importantly — `to_int`/
+`to_double`, which return `Result` so a bad string becomes an *error value*
+rather than an exception. That last bit is your first real look at the ADTs.
 
 ---
 
 ### 1. Word count · Easy
 
-Given `"the quick brown fox"`, count the words (4). Use `split`.
+Count the words in `"the quick brown fox"` (4).
+
+**Why `split`:** "break on a delimiter" is one call; `split(s, ' ').size()`
+replaces the `find`-in-a-loop dance. Splitting returns a vector you can then
+`map`/`filter`/`size` like any other collection.
 
 ```cpp
 assert(fp::str::split("the quick brown fox", ' ').size() == 4);
@@ -17,7 +26,11 @@ assert(fp::str::split("the quick brown fox", ' ').size() == 4);
 
 ### 2. Normalize a name · Easy
 
-Given `"  Ada Lovelace  "`, produce `"ada lovelace"` — trim then lowercase.
+`"  Ada Lovelace  "` → `"ada lovelace"` (trim then lowercase).
+
+**Why compose two pure transforms:** `to_lower(trim(s))` is a two-step
+pipeline, each step a named operation. Because both are pure, you read
+right-to-left: "trim, then lowercase" — no temp variable, no mutation.
 
 ```cpp
 assert(fp::str::to_lower(fp::str::trim("  Ada Lovelace  ")) == "ada lovelace");
@@ -25,7 +38,11 @@ assert(fp::str::to_lower(fp::str::trim("  Ada Lovelace  ")) == "ada lovelace");
 
 ### 3. Join with a separator · Easy
 
-Given `{"a","b","c"}`, produce `"a, b, c"`.
+`{"a","b","c"}` → `"a, b, c"`.
+
+**Why `join`:** the inverse of `split`. The separator logic (add it *between*
+items, not after the last) is a classic off-by-one that `join` gets right once.
+The range overload also joins anything (ints, etc.), not just strings.
 
 ```cpp
 assert(fp::str::join(std::vector<std::string>{"a","b","c"}, ", ") == "a, b, c");
@@ -33,8 +50,11 @@ assert(fp::str::join(std::vector<std::string>{"a","b","c"}, ", ") == "a, b, c");
 
 ### 4. Does it start with…? · Easy
 
-Given `"hello.txt"`, answer whether it starts with `"he"` and ends with
-`".txt"` (both true). Use `starts_with` / `ends_with`.
+Does `"hello.txt"` start with `"he"` and end with `".txt"`? (yes/yes)
+
+**Why named predicates:** `starts_with`/`ends_with` read as questions, and
+returning `bool` means they slot straight into `filter`/`cond`/`when`. The
+manual `s.rfind(prefix, 0) == 0` is noise by comparison.
 
 ```cpp
 assert(fp::str::starts_with("hello.txt", "he"));
@@ -43,8 +63,12 @@ assert(fp::str::ends_with("hello.txt", ".txt"));
 
 ### 5. Parse a CSV row of numbers · Medium
 
-Given `"1,2,3,4"`, produce `std::vector<int>{1,2,3,4}`. Split on `,`, then
-`traverse` the pieces with `to_int` and `unwrap` (or check the `Result`).
+`"1,2,3,4"` → `std::vector<int>{1,2,3,4}`.
+
+**Why `split` + `traverse`:** splitting gives strings; `traverse` maps each
+through a *fallible* function (`to_int`) and combines the `Result`s — all
+succeed → the vector, any fail → the error. This is the "parse a row" idiom in
+two combinators, with failure handled as a value rather than a thrown exception.
 
 ```cpp
 auto parts = fp::str::split("1,2,3,4", ',');
@@ -54,8 +78,12 @@ assert(nums.is_ok() && nums.value() == std::vector<int>({1,2,3,4}));
 
 ### 6. Sanitize and parse a number · Medium
 
-Given `"  42  "`, produce `Result<int>` holding 42. `to_int` already trims —
-but use `trim` + `to_int` explicitly, then `map` it to double it (84).
+`"  42  "` → `Result<int>` holding 42, then doubled to 84.
+
+**Why `map` over a `Result`:** `to_int` already trims, but the point is to show
+`map` working on the *wrapper*: it reaches inside the `Result`, applies
+`times(2)` to the value, and passes the failure through untouched. Transforming
+a value you may not have, without a single `if`.
 
 ```cpp
 auto r = fp::map(fp::str::to_int(fp::str::trim("  42  ")), fp::times(2));
@@ -64,7 +92,12 @@ assert(r.is_ok() && r.value() == 84);
 
 ### 7. Title-case a headline · Medium
 
-Given `"fp is great"`, produce `"Fp Is Great"` using `fp::str::title`.
+`"fp is great"` → `"Fp Is Great"`.
+
+**Why a named function over the loop:** capitalizing each word is a stateful
+walk (track "am I at a word start?"). `fp::str::title` hides that state machine
+behind a name, so call sites stay declarative and the edge cases live in one
+place.
 
 ```cpp
 assert(fp::str::title("fp is great") == "Fp Is Great");

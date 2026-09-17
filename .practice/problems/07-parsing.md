@@ -3,15 +3,29 @@
 **Headers:** `<fp/parse.hpp>` (`char_`, `string_`, `many`, `some`, `sep_by`,
 `optional`, `map`, `and_then`, `alt`, `run`).
 
-`Parser<T>` is `std::function<Result<std::pair<T, std::string_view>>(std::string_view)>`.
+## What this module is about
+
+A parser is a function `std::string_view -> Result<pair<T, string_view>>`: it
+consumes some input and returns the parsed value *plus the leftover input*, or
+an error. Parser combinators let you build a grammar by *combining* small
+parsers, the way you build `Result`s with `and_then`. The two workhorses:
+
+- `map` — succeed where `p` succeeds, transforming the value.
+- `and_then` — receive the value, then decide which parser runs next (this is
+  how context flows through a grammar).
+- `alt` — backtrack and try another parser on failure.
+
 `run(p, input)` runs to completion and returns `Result<T>`.
 
 ---
 
 ### 1. Match a literal · Easy
 
-Build a parser with `string_` that matches `"hello"` and use `run` on
-`"hello world"` → `ok("hello")`.
+`string_("hello")` on `"hello world"` → `ok("hello")`.
+
+**Why `string_`:** the base case of any grammar — "expect exactly this text".
+It returns the matched literal and the leftover (`" world"`), which is what
+lets later combinators continue where it stopped.
 
 ```cpp
 auto p = fp::string_("hello");
@@ -21,7 +35,11 @@ assert(r.is_ok() && r.value() == "hello");
 
 ### 2. One or more `a`s · Easy
 
-Build `some(char_('a'))` and count how many `a`s are at the start of `"aaab"`.
+`some(char_('a'))` on `"aaab"` → 3 `a`s.
+
+**Why `some` vs `many`:** both repeat; `some` requires at least one match
+(empty input is an error), `many` allows zero. Choosing the right one encodes
+your grammar's intent in the type.
 
 ```cpp
 auto p = fp::some(fp::char_('a'));
@@ -31,8 +49,12 @@ assert(r.is_ok() && r.value().size() == 3);
 
 ### 3. Comma-separated words · Medium
 
-Parse `"aa,aaa,aaaa"` into `vector<size_t>` of the word lengths
-(`{2,3,4}`). Compose `some(char_('a'))` + `map` (to length) + `sep_by(char_(','))`.
+Parse `"aa,aaa,aaaa"` into the word lengths `{2,3,4}`.
+
+**Why compose `some` + `map` + `sep_by`:** three concerns, three combinators —
+"one or more a's" (`some`), "turn that into a length" (`map`), "separated by
+commas" (`sep_by`). Each piece is independently readable and testable; the
+grammar falls out of composition.
 
 ```cpp
 auto word_len = fp::map(fp::some(fp::char_('a')),
@@ -44,20 +66,29 @@ assert(r.is_ok() && r.value() == std::vector<size_t>({2,3,4}));
 
 ### 4. Optional section · Medium
 
-A parser that *always* succeeds: capture the value when it's there, otherwise
-`nullopt`. Use `optional` around a `word` parser.
+A parser that always succeeds, capturing the value or `nullopt`.
+
+**Why `optional`:** some grammar parts are allowed to be absent. `optional(p)`
+never fails — if `p` matches, you get `some(value)`; if not, `nullopt` with the
+input unchanged. It's the parser version of `Maybe`.
 
 ```cpp
 auto word = fp::map(fp::some(fp::char_('a')), [](auto cs){ return std::string(cs.begin(), cs.end()); });
 auto mid  = fp::optional(word);
 assert(fp::run(mid, "aaa").value() == std::optional(std::string("aaa")));
-assert(fp::run(mid, "bbb").value() == std::nullopt);   // word fails, optional swallows it
+assert(fp::run(mid, "bbb").value() == std::nullopt);
 ```
 
 ### 5. `key=value` (hard) · Hard
 
-Parse `"aa=aaa"` into a `pair<string,string>` using `and_then` to remember the
-key while parsing the value. (Capture the `word` parser in the inner lambdas.)
+Parse `"aa=aaa"` into a `pair<string,string>`.
+
+**Why `and_then` threads context:** after parsing the key, you need to *remember
+it* while parsing the value. `and_then` hands the key to the next stage, which
+parses `=` then the value, then pairs them up. This is the parser analogue of
+`Result::and_then` — bind — and the single most important combinator for
+grammars with context. (Note the lambdas capture the `word` parser so it can be
+reused after the `=`.)
 
 ```cpp
 Parser<std::string> word = fp::map(fp::some(fp::char_('a')),

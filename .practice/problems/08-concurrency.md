@@ -2,15 +2,29 @@
 
 **Headers:** `<fp/concurrent.hpp>`, `<fp/stream.hpp>`.
 
-Compile with `-pthread`. These exercise parallel combinators, the thread pool,
-the SPSC ring, actors, and async helpers.
+Compile with `-pthread`. These exercise the parallel combinators, the thread
+pool, the lock-free SPSC ring, actors, and async helpers.
+
+## What this module is about
+
+Concurrency has two halves here: **parallelism** (split a pure computation
+across threads — `par_map`/`par_reduce`) and **communication** (move data
+between threads — `Channel`, `RingBuffer`, `Actor`, futures). The library keeps
+them separate: parallel combinators are *pure* (same result, just faster),
+while the communication primitives are the explicit, bounded places where
+threads interact. `Stream` layers a declarative `map`/`filter` over either.
 
 ---
 
 ### 1. Parallel map keeps order · Easy
 
-Use `fp::par_map` (thread-pool form) to double `{0..999}` and confirm the
-result is `{0,2,4,…,1998}` **in order**.
+Double `{0..999}` with `par_map` and confirm the result stays ordered.
+
+**Why `par_map` (and why order matters):** the pool splits the vector into
+chunks, maps each on a worker, and reassembles **in order** — so a parallel map
+is a drop-in replacement for a sequential one, with the same contract. Using a
+`ThreadPool` (vs the one-shot `std::async` form) amortizes thread creation
+across many calls.
 
 ```cpp
 fp::ThreadPool pool(4);
@@ -21,7 +35,13 @@ assert(out.size() == 1000 && out[0] == 0 && out[999] == 1998);
 
 ### 2. Parallel reduce · Easy
 
-Sum `{0..999}` (499500) with `fp::par_reduce`.
+Sum `{0..999}` (499500) with `par_reduce`.
+
+**Why `par_reduce` needs associativity:** each worker reduces its own slice, then
+the partials are combined. That's only correct if `op` is associative
+(`a + (b + c) == (a + b) + c`). For `+` it is; for floating-point or
+non-associative ops, use a sequential fold instead. `par_reduce` makes the
+trade-off explicit in the API.
 
 ```cpp
 fp::ThreadPool pool(4);
@@ -32,7 +52,12 @@ assert(sum == 499500);
 ### 3. Ring buffer producer/consumer · Medium
 
 One thread pushes `{0..999}` into a `RingBuffer<int>(64)`; the main thread pops
-them all and checks the sum. Use `push`/`try_pop`.
+and checks the sum.
+
+**Why `RingBuffer` over `Channel`:** `Channel` uses a mutex, which a realtime
+thread (audio, render) must never block on. `RingBuffer` is lock-free SPSC — one
+producer, one consumer, no locks — so it's the realtime-safe data path. The
+cost is the SPSC contract: exactly two threads, and you busy-spin on full/empty.
 
 ```cpp
 fp::RingBuffer<int> rb(64);
@@ -47,8 +72,13 @@ assert(sum == 499500);
 
 ### 4. Actor counter · Medium
 
-Create an `Actor<int, int>` that sums its messages; `Send` 100 messages of 1,
-then read `snapshot() == 100`.
+An `Actor<int,int>` sums its messages; send 100 ones, then read `snapshot() == 100`.
+
+**Why `Actor`:** a stateful worker with a mailbox — you send messages and it
+serializes them through a handler `State(State, Msg)`, so the state is never
+touched by two threads at once. It's the pattern for a background service whose
+state you mutate by message, not by shared memory. `snapshot()` reads the
+current state; `Ask` returns the post-message state as a future.
 
 ```cpp
 fp::Actor<int, int> counter(0, [](int s, int m){ return s + m; });
@@ -59,8 +89,13 @@ assert(counter.snapshot() == 100);
 
 ### 5. Race: first result wins · Medium
 
-Two futures, one resolves to `ok(1)` after a short delay, the other to `ok(2)`
-immediately. `fp::race` should hand you the faster one (`ok(2)`).
+Two futures — one slow (`ok(1)` after 50ms), one instant (`ok(2)`). `race`
+returns the faster one.
+
+**Why `race`:** when any of several async computations will do (fetch from a
+mirror, first responder), you want the first completion, not a specific one.
+`race` fans out the futures and resolves when the first sets the shared result;
+the losers' attempts to set it are discarded.
 
 ```cpp
 using namespace std::chrono_literals;
@@ -73,8 +108,14 @@ assert(r.value() == 2);
 
 ### 6. Stream a counter · Medium
 
-Build a `Stream<int>` from a pull source that counts 0..4, `map` (×2), `filter`
-(>2), and `subscribe` to sum the result (`4+6+8 = 18`).
+Build a `Stream<int>` counting 0..4, `map` (×2), `filter` (>2), `subscribe` and
+sum (18).
+
+**Why `Stream`:** it's the *transform surface* over any source of items — pull
+(a `std::function<optional<T>()>`) or push (a `Channel`). `map`/`filter` return
+a new lazy `Stream`; `subscribe` runs the pipeline. One abstraction for "a
+sequence of values that arrives over time", whether it's synchronous or
+threaded.
 
 ```cpp
 fp::Stream<int> s([i = 0]() mutable -> std::optional<int> {
