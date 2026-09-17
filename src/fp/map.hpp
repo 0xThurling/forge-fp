@@ -21,7 +21,7 @@ std::map<K, V> map_values(std::map<K, V> const &m, F f) {
 }
 
 template <class K, class V, class F>
-std::map<K, V> filter(std::map<K, V> const &m, F pred) {
+std::map<K, V> filter_values(std::map<K, V> const &m, F pred) {
   std::map<K, V> out;
   for (auto const &[k, v] : m)
     if (pred(v))

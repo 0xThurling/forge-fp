@@ -15,7 +15,7 @@ std::map<std::string, int> m = {{"a", 1}, {"b", 2}, {"c", 3}};
 |---|---|
 | `lookup(m, k)` | `optional<V>` — value or `nullopt` |
 | `map_values(m, f)` | new map with `f(v)` applied to each value |
-| `filter(m, pred)` | keep entries where `pred(v)` |
+| `filter_values(m, pred)` | keep entries where `pred(v)` |
 | `merge_with(a, b, combine)` | union; `combine(a_v, b_v)` resolves collisions |
 | `keys(m)` / `values(m)` | `vector<K>` / `vector<V>` |
 | `to_map(vector<pair<K,V>>)` | build a map from pairs |
@@ -25,7 +25,7 @@ fp::lookup(m, std::string("b"));                       // optional{2}
 fp::lookup(m, std::string("z"));                       // nullopt
 
 fp::map_values(m, [](int v) { return v * 10; });       // {"a":10,"b":20,"c":30}
-fp::filter(m, [](int v) { return v % 2 == 1; });       // {"a":1,"c":3}
+fp::filter_values(m, [](int v) { return v % 2 == 1; });       // {"a":1,"c":3}
 
 std::map<std::string, int> n = {{"c", 30}, {"d", 4}};
 fp::merge_with(m, n, [](int a, int b) { return a + b; }); // c -> 33, d -> 4

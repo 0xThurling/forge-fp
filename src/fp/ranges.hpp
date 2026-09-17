@@ -141,7 +141,7 @@ auto zip(R1 &&a, R2 &&b) {
   using A = std::ranges::range_value_t<R1>;
   using B = std::ranges::range_value_t<R2>;
   std::vector<std::pair<A, B>> out;
-  auto ia = std::ranges::begin(a), ib = std::ranges::begin(a);
+  auto ia = std::ranges::begin(a), ib = std::ranges::begin(b);
   auto ea = std::ranges::end(a), eb = std::ranges::end(b);
   for (; ia != ea && ib != eb; ++ia, ++ib)
     out.emplace_back(*ia, *ib);
