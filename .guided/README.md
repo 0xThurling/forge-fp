@@ -1,8 +1,8 @@
 # ForgeFP — Guided Projects
 
-Seven full projects that walk you through building a *real program* with the
-library, one step at a time. Each step gives you most of the code and explains
-the **functional concept** behind it; each project ends with an open **challenge**
+Seven focused projects plus a final **capstone** that pulls the whole library
+into one program. Each step gives you most of the code and explains the
+**functional concept** behind it; each project ends with an open **challenge**
 where you write the code yourself.
 
 Unlike the [practice problems](../.practice/README.md) (single assertions),
@@ -36,13 +36,16 @@ g++ -std=c++20 -I src -o app app.cpp && ./app
 | [5. memo-lab](memo-lab/README.md) | dynamic programming tools | recursion, memoization, higher-order functions | `memoize`, `combinators`, `curry` |
 | [6. event-loop](event-loop/README.md) | an actor/stream event system | state-as-value, message passing | `concurrent`, `stream`, `adt` |
 | [7. render-loop](render-loop/README.md) | a frame loop with SIMD + arena | scoped memory, vectorized math | `arena`, `simd`, `concurrent` |
+| [8. input-repl](input-repl/README.md) | a line processor that becomes a REPL | streams, producer/consumer, key reading | `input`, `stream`, `concurrent`, `adt` |
+| [9. spinner](spinner/README.md) — **capstone** | a rotating shape in the terminal | every concept above, combined | *all of them* |
 
 ## Suggested order
 
-Do them 1 → 7. They build on each other: 1 introduces the core verbs, 2–3 the
-ADTs and parsing, 4 the parallel combinators, 5 the higher-order functions,
-6–7 the advanced performance tools. Together they touch every module in the
-library.
+Do them 1 → 8, then the **spinner** (9) as the capstone — it assumes the whole
+toolkit. The eight lead-ups build on each other: 1 introduces the core verbs,
+2–3 the ADTs and parsing, 4 the parallel combinators, 5 the higher-order
+functions, 6–7 the advanced performance tools, 8 the input/stream layer. The
+spinner uses all of them at once.
 
 ## The pattern
 
