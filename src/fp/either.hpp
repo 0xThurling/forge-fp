@@ -1,4 +1,5 @@
 #pragma once
+#include "compose.hpp"
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
@@ -144,5 +145,11 @@ Either<E, T> ok_or(std::optional<T> const &o, E error) {
 template <class E, class T, class F>
 auto operator>>=(Either<E, T> const &e, F f) -> std::invoke_result_t<F, T> {
   return fp::and_then(e, std::move(f));
+}
+
+// pipe: `into(either) | f` maps `f` over the value (propagating the error).
+template <class E, class T, class F>
+auto operator|(Piped<Either<E, T>> p, F f) {
+  return Piped{fp::map(p.value, std::move(f))};
 }
 } // namespace fp

@@ -49,6 +49,34 @@ If a stage returns `void`, the value passes through unchanged (useful with
 `compose` are for building a reusable function to apply later. `into(x) | f | g`
 is sugar for `pipe(f, g)(x)`.
 
+### `|` is type-directed — it maps over wrappers
+
+For the *wrapper* types the function is lifted inside the value; for everything
+else it's applied to the value directly:
+
+| Piped type | `into(x) \| f` does |
+|---|---|
+| `Result<T>` / `Either<E,T>` / `Validation<T>` | `map(x, f)` — map over the value, propagate the error |
+| `std::optional<T>` | `map(x, f)` — map over the value, propagate `nullopt` |
+| `Stream<T>` | `map(x, f)` — map over the items |
+| anything else (plain value, `vector`, range, string) | `f(x)` — apply directly |
+
+```cpp
+// error-carrying pipe: no `if (!is_ok())` anywhere
+fp::Result<int> r = fp::out(fp::into(fp::str::to_int("21"))
+    | fp::plus(1)      // ok(22)
+    | fp::times(2));   // ok(44)
+
+fp::Result<int> e = fp::out(fp::into(fp::err<int>("boom")) | fp::times(2));  // err("boom")
+
+// optional pipe
+std::optional<int> o = fp::out(fp::into(std::optional<int>{3}) | fp::plus(1));  // optional{4}
+```
+
+The one thing to remember: a `vector` is **not** a wrapper here — `into(v) | f`
+still applies `f` to the whole vector (use `fp::map` for element-wise mapping).
+This keeps the pipe's "plain value" behavior backward-compatible.
+
 ## `curry` and `uncurry`
 
 ```cpp

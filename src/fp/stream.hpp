@@ -1,4 +1,5 @@
 #pragma once
+#include "compose.hpp"
 #include "concurrent.hpp"
 #include <functional>
 #include <optional>
@@ -45,5 +46,11 @@ public:
 private:
   Source src_;
 };
+
+// pipe: `into(stream) | f` maps `f` over the items.
+template <class T, class F>
+auto operator|(Piped<Stream<T>> p, F f) {
+  return Piped{p.value.map(std::move(f))};
+}
 
 } // namespace fp

@@ -1,4 +1,5 @@
 #pragma once
+#include "forgefp/fp/compose.hpp"
 #include <optional>
 #include <type_traits>
 #include <vector>
@@ -71,5 +72,11 @@ T value_or_lazy(std::optional<T> const &o, F fallback) {
 template <class T, class F>
 auto operator>>=(std::optional<T> const &o, F f) -> std::invoke_result_t<F, T> {
   return fp::and_then(o, std::move(f));
+}
+
+// pipe: `into(optional) | f` maps `f` over the value (propagating nullopt).
+template <class T, class F>
+auto operator|(Piped<std::optional<T>> p, F f) {
+  return Piped{fp::map(p.value, std::move(f))};
 }
 } // namespace fp
