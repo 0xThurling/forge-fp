@@ -129,20 +129,22 @@ fp::Stream<Message> s([&events, i = 0]() mutable -> std::optional<Message> {
 });
 
 int balance = 0;
-s.map([](Message m) {
-        return fp::match(m,
-            fp::case_<Deposit> ([](auto d) { return  d.amount; }),
-            fp::case_<Withdraw>([](auto w) { return -w.amount; }));
-    })
- .subscribe([&](int delta) { balance += delta; });
+// `|` maps over the stream: `match` is lifted into every event
+auto deltas = fp::out(fp::into(s) | [](Message m) {
+    return fp::match(m,
+        fp::case_<Deposit> ([](auto d) { return  d.amount; }),
+        fp::case_<Withdraw>([](auto w) { return -w.amount; }));
+});
+deltas.subscribe([&](int delta) { balance += delta; });
 
 std::cout << balance << "\n";   // 120
 ```
 
 **Verify:** prints `120`.
 
-**Concept — stream = lazy pipeline.** `map` builds a new `Stream` (nothing runs);
-`subscribe` runs it. Same `map`/`filter` vocabulary as collections, over a
+**Concept — stream = lazy pipeline.** `into(stream) | f` maps `f` over the items
+and returns a new `Stream` (nothing runs); `subscribe` runs it. Same
+`map`/`filter` vocabulary as collections — now reachable with `|` — over a
 sequence that arrives over time.
 
 ## Stage 7 — Filter the stream
@@ -150,9 +152,14 @@ sequence that arrives over time.
 Goal: apply a predicate before the fold.
 
 ```cpp
-s.map(/* delta */)
- .filter([](int delta) { return delta > 0; })   // only deposits
- .subscribe([&](int delta) { balance += delta; });
+// `|` maps; `filter` still filters (then fold with subscribe)
+auto deposits = fp::out(fp::into(s) | [](Message m) {
+    return fp::match(m,
+        fp::case_<Deposit> ([](auto d) { return  d.amount; }),
+        fp::case_<Withdraw>([](auto w) { return -w.amount; }));
+}).filter([](int delta) { return delta > 0; });   // only deposits
+
+deposits.subscribe([&](int delta) { balance += delta; });
 ```
 
 **Verify:** with `{Deposit{100}, Withdraw{30}, Deposit{50}}`, balance is `150`

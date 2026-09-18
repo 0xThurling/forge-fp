@@ -94,16 +94,21 @@ Goal: transform the lines before summing — only keep the even numbers.
 
 int main() {
     long long total = 0;
-    fp::read_lines()
-        .map([](std::string const& s) { return fp::str::to_int(s); })   // Stream<Result<int>>
-        .subscribe([&](fp::Result<int> r) {
-            if (r.is_ok() && r.value() % 2 == 0) total += r.value();
-        });
+    // `|` maps over the stream: `to_int` is lifted into every line
+    auto parsed = fp::out(fp::into(fp::read_lines()) | fp::str::to_int);  // Stream<Result<int>>
+    parsed.subscribe([&](fp::Result<int> r) {
+        if (r.is_ok() && r.value() % 2 == 0) total += r.value();
+    });
     std::cout << "even sum = " << total << "\n";
 }
 ```
 
 **Verify:** `printf "1\n2\n3\n4\n" | ./app` prints `even sum = 6`.
+
+**Concept — same vocabulary as collections, via `|`.** `into(stream) | f` maps
+`f` over the items (the type-directed pipe — see
+[composition](../../.docs/composition.md)), so the stream is transformed with
+the same operator you'd use on a `Result` or `optional`.
 
 **Concept — same vocabulary as collections.** `Stream::map`/`filter` mirror
 `vec.hpp`'s — a sequence that arrives over time is transformed with the same

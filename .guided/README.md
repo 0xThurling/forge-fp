@@ -56,5 +56,22 @@ Every project follows the same rhythm:
 3. **Compose** — thread them together with `map`/`and_then`/`|`.
 4. **Challenge** — extend it yourself.
 
+### The `|` operator (use it everywhere)
+
+The pipe is type-directed: `into(x) | f` maps `f` over the value when `x` is a
+wrapper (`Result`/`Either`/`Validation`, `optional`, `Stream`), and applies `f`
+directly otherwise. So the same operator chains an `int`, a `Result`, and a
+`Stream`:
+
+```cpp
+fp::out(fp::into(3) | fp::times(2));                       // 6
+fp::out(fp::into(fp::ok(3)) | fp::times(2));               // ok(6) — error propagates
+fp::out(fp::into(std::optional<int>{3}) | fp::plus(1));    // optional{4}
+fp::out(fp::into(stream) | fp::times(2));                  // a mapped Stream
+```
+
+Use it in place of `map`/`and_then` wherever a wrapper value flows through the
+pipeline — see [composition](../.docs/composition.md) for the full rules.
+
 If a step's code doesn't make sense, read the linked [docs](../.docs/README.md)
 for that module — the walkthroughs assume you can look up the exact signatures.

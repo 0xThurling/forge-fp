@@ -179,12 +179,21 @@ inequality) with a `Result`.
 fp::Result<Shape> make_circle(double r) {
     return r > 0 ? fp::ok(Shape{Circle{r}}) : fp::err<Shape>("radius must be positive");
 }
+
+// and chain it with the pipe — `|` maps over the Result, propagating the error
+fp::Result<double> area_of_circle(double r) {
+    return fp::out(fp::into(make_circle(r)) | area);
+}
 ```
 
-**Verify:** `make_circle(-1)` is an error; `make_circle(2)` is `ok`.
+**Verify:** `make_circle(-1)` is an error; `make_circle(2)` is `ok`, and
+`area_of_circle(-1)` is an error while `area_of_circle(2)` ≈ `12.57`.
 
-**Concept — validate at the boundary.** The sum type is total (any `Shape` is
-valid); you push *invalid* inputs out to a `Result` at the constructor boundary.
+**Concept — validate at the boundary, then pipe.** The sum type is total (any
+`Shape` is valid); you push *invalid* inputs out to a `Result` at the constructor
+boundary. From there, `into(result) | area` maps `area` over the value —
+short-circuiting on the error — so a `Result` composes like any other value in a
+pipe.
 
 ---
 

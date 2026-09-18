@@ -199,7 +199,13 @@ struct Config {
 **Verify:** `cfg.get_int("port")` is `ok(8080)`; `cfg.get_int("nope")` is an error.
 
 **Concept — a value-level API.** The parser produces plain data; the accessors
-add typed, `Result`-returning queries on top. Clean separation.
+add typed, `Result`-returning queries on top. Clean separation. And once you
+hold a `Result`, the pipe maps over it:
+
+```cpp
+// double the port, or propagate the error
+fp::Result<int> twice = fp::out(fp::into(cfg.get_int("port")) | fp::times(2));
+```
 
 ---
 
