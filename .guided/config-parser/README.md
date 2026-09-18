@@ -75,8 +75,8 @@ the value — the same `map` idea as `Result`, lifted to functions.
 Goal: parse `key`, remember it, parse `=`, parse `value`, pair them.
 
 ```cpp
-auto pair = fp::and_then(word, [](std::string k) {
-    return fp::map(fp::and_then(fp::string_("="), [](std::string) { return token; }),
+auto pair = fp::and_then(word, [token](std::string k) {
+    return fp::map(fp::and_then(fp::string_("="), [token](std::string) { return token; }),
                    [k](std::string v) { return std::pair{k, v}; });
 });
 ```
@@ -133,7 +133,7 @@ but worthwhile exercise — see the extensions.)
 Goal: group pairs under `[section]` headers.
 
 ```cpp
-auto section = fp::map(fp::and_then(fp::string_("["), [](std::string) {
+auto section = fp::map(fp::and_then(fp::string_("["), [word](std::string) {
     return fp::and_then(word, [](std::string name) {
         return fp::map(fp::string_("]"), [name](std::string) { return name; });
     });

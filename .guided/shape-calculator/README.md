@@ -146,7 +146,7 @@ auto number = fp::map(fp::some(digit), [](std::vector<char> const& cs) {
     return std::stod(std::string(cs.begin(), cs.end()));
 });
 
-auto circle = fp::map(fp::and_then(fp::string_("circle "), [](std::string) { return number; }),
+auto circle = fp::map(fp::and_then(fp::string_("circle "), [number](std::string) { return number; }),
                       [](double r) { return Shape{Circle{r}}; });
 ```
 
