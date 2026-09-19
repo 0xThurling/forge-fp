@@ -138,22 +138,27 @@ lambda captures `k` from the enclosing `scale`. Each arm scales its own fields.
 
 ## Stage 8 — Parse shapes from text
 
-Goal: read `circle 2.0` / `rect 3.0 4.0` from a file. First a number parser:
+Goal: read `circle 2.0` / `rect 3.0 4.0` from a file.
 
 ```cpp
-auto digit  = satisfy([](char c) { return c >= '0' && c <= '9'; });
-auto number = fp::map(fp::some(digit), [](std::vector<char> const& cs) {
-    return std::stod(std::string(cs.begin(), cs.end()));
-});
+using namespace fp;
 
-auto circle = fp::map(fp::and_then(fp::string_("circle "), [number](std::string) { return number; }),
-                      [](double r) { return Shape{Circle{r}}; });
+// a number: digits and a dot, whitespace-tolerant
+Parser<double> number = lexeme(map(some(one_of('0','1','2','3','4','5','6','7','8','9','.')),
+                                   [](std::vector<char> const& cs) {
+                                       return std::stod(std::string(cs.begin(), cs.end()));
+                                   }));
+
+// "circle" <number>  ->  Shape
+auto circle = map(preceded(keyword("circle"), number),
+                  [](double r) { return Shape{Circle{r}}; });
 ```
 
 **Verify:** `fp::run(circle, "circle 2.0")` is `ok(Circle{2.0})`.
 
-**Concept — parse then construct.** `and_then` parses the keyword, then the
-number, and `map` builds the value.
+**Concept — `preceded` + `map`.** `preceded(keyword("circle"), number)` throws
+away the keyword and keeps the number; `map` then constructs the `Shape`. No
+capture dance, because the number doesn't depend on the keyword.
 
 ## Stage 9 — Largest shape
 

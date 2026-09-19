@@ -38,11 +38,13 @@ g++ -std=c++20 -I src -o app app.cpp && ./app
 | [7. render-loop](render-loop/README.md) | a frame loop with SIMD + arena | scoped memory, vectorized math | `arena`, `simd`, `concurrent` |
 | [8. input-repl](input-repl/README.md) | a line processor that becomes a REPL | streams, producer/consumer, key reading | `input`, `stream`, `concurrent`, `adt` |
 | [9. spinner](spinner/README.md) — **capstone** | a rotating shape in the terminal | every concept above, combined | *all of them* |
+| [10. json-parser](json-parser/README.md) | a JSON parser | parser combinators, recursion (`ref`) | `parse`, `adt`, `variant` |
 
 ## Suggested order
 
 Do them 1 → 8, then the **spinner** (9) as the capstone — it assumes the whole
-toolkit. The eight lead-ups build on each other: 1 introduces the core verbs,
+toolkit. Project 10 (**json-parser**) is the parsing capstone; do it any time
+after 2–3. The eight lead-ups build on each other: 1 introduces the core verbs,
 2–3 the ADTs and parsing, 4 the parallel combinators, 5 the higher-order
 functions, 6–7 the advanced performance tools, 8 the input/stream layer. The
 spinner uses all of them at once.

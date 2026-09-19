@@ -11,115 +11,161 @@ template <class T>
 using Parser = std::function<Result<std::pair<T, std::string_view>>(std::string_view)>;
 ```
 
-## Why parser combinators over a hand-rolled state machine
+## The one idea
 
-A handwritten parser is usually a loop plus a cursor plus a pile of
-`if (s[i] == ...)` checks, and it breaks the moment the grammar grows a new
-branch. Parser combinators invert that:
+A parser is a function: `input → Result<(value, leftover)>`. It eats a *prefix*
+of the input and returns **what it found** and **what's left**.
 
-- **A parser is a value**, so you can store it, pass it around, and *combine* it
-  (`map`, `and_then`, `alt`, `sep_by`) like any other value.
-- **Each combinator is one grammar rule.** `sep_by(item, sep)` *is* "a
-  separated list"; you compose rules instead of tracking a cursor.
-- **Failure is a `Result`**, so parse errors flow through the same error channel
-  as everything else — no exceptions, no sentinel positions.
+```cpp
+fp::run(fp::char_('a'), "abc")   // ok('a')  — char_ matched 'a', left "bc"
+```
 
-The two workhorses to internalize:
+Everything else is *combining* these functions.
 
-- `map(p, f)` — succeed where `p` succeeds, transforming the value.
-- `and_then(p, f)` — receive the value, then decide which parser runs next.
-  This is how *context* flows through a grammar (parse the key, then use it to
-  parse the value).
+## Primitives
 
-## Core combinators
+| Function | Matches |
+|---|---|
+| `char_(c)` | one specific character |
+| `string_(s)` | a literal string |
+| `satisfy(pred)` | one char where `pred(c)` is true |
+| `digit` / `letter` / `alnum` / `space` | character classes |
+| `one_of('a','b',…)` / `none_of(…)` | any / none of a set |
+
+```cpp
+fp::digit;                       // a Parser<char>
+fp::one_of('+', '-');            // '+' or '-'
+fp::satisfy([](char c) { return c >= 'A' && c <= 'Z'; });
+```
+
+## Sequencing
 
 | Function | Result |
 |---|---|
-| `char_(c)` | match one character |
-| `string_(s)` | match a literal string |
-| `many(p)` | zero or more |
-| `some(p)` | one or more |
-| `sep_by(p, sep)` | one or more `p`, separated by `sep` |
-| `optional(p)` | zero or one, always succeeds |
 | `map(p, f)` | transform the parsed value |
-| `and_then(p, f)` | bind: `f(value)` returns the next parser |
-| `alt(a, b)` | try `a`, else `b` (choice) |
-| `run(p, input)` | run to completion → `Result<T>` |
-
-## Example: a comma-separated list of words
-
-```cpp
-#include <fp/parse.hpp>
-using namespace fp;
-
-// a "word" = one or more 'a's (keep it tiny for the example)
-Parser<std::vector<char>> word = some(char_('a'));
-
-// convert the chars to a string
-Parser<std::string> word_str = map(word, [](std::vector<char> const& cs) {
-    return std::string(cs.begin(), cs.end());
-});
-
-// words separated by commas
-Parser<std::vector<std::string>> list = sep_by(word_str, char_(','));
-
-auto r = run(list, "aa,a,aaa");
-// r == ok({"aa", "a", "aaa"})
-```
-
-## Example: `key=value` with context via `and_then`
-
-`and_then` is how you remember what you've parsed so far and continue:
+| `and_then(p, f)` | `f(value)` returns the *next* parser (context/bind) |
+| `seq(a, b)` | parse both, return `pair{a, b}` |
+| `preceded(a, b)` | parse `a` then `b`, keep **b** |
+| `terminated(a, b)` | parse `a` then `b`, keep **a** |
+| `between(open, close, p)` | parse `open`, `p`, `close` — keep `p` |
 
 ```cpp
-using namespace fp;
-
-Parser<std::string> key = map(some(char_('a')), [](auto cs) {
-    return std::string(cs.begin(), cs.end());
-});
-
-Parser<std::pair<std::string, std::string>> kv =
-    and_then(key, [key](std::string k) {
-        // after the '=', parse another word and pair it with the remembered key
-        return map(and_then(char_('='), [key](char) { return key; }),
-                   [k](std::string v) { return std::pair{k, v}; });
-    });
-
-Parser<std::vector<std::pair<std::string,std::string>>> pairs = sep_by(kv, char_(','));
-
-run(pairs, "aa=aaa,aaaa=aaaaa");
-// ok({{"aa","aaa"},{"aaaa","aaaaa"}})
+// "key: value"  ->  pair<string, int>,  skipping whitespace + ':'
+auto pair = fp::seq(
+    fp::lexeme(some(fp::letter)),                       // key
+    fp::preceded(fp::symbol(':'), fp::lexeme(some(fp::digit))));
+fp::run(pair, "width: 42");   // ok({"width", {'4','2'}})
 ```
 
-Note the `[key]` captures: the inner lambdas close over the `key` parser (a
-copyable `std::function`) so they can reuse it after the `=`.
+`and_then` is the one you reach for when the next step *depends on* the value
+(the parser analogue of `>>=`); `seq`/`preceded`/`terminated` cover the common
+"parse this, then that" cases without a lambda.
 
-## How the combinators compose
+## Repetition and choice
 
-- `map(p, f)` — succeed where `p` succeeds, applying `f` to the value.
-- `and_then(p, f)` — `f` receives the value and returns a *parser*; parsing
-  continues with it. This threads context (`"aa=…"` → remember `"aa"` → parse
-  the value).
-- `alt(a, b)` — try `a`; if it fails, backtrack and try `b`.
-- `optional(p)` — never fails: `ok(nullopt)` if `p` fails (input unchanged).
-- `sep_by(p, sep)` — one or more `p` separated by `sep`; a trailing separator
-  is an error (there must be an item after each separator).
-- `many`/`some` — greedy repetition; `many` also matches the empty input.
+| Function | Result |
+|---|---|
+| `many(p)` / `some(p)` | zero+ / one+ |
+| `sep_by(p, sep)` | one or more `p`, separated by `sep` |
+| `optional(p)` | zero or one (never fails) |
+| `alt(a, b)` / `choice(a, b, …)` | try each in order (backtracking) |
 
-The `map`/`and_then`/`alt` trio here mirrors the ADTs' `map`/`and_then`/`or_else`
-(see [ADTs](adts.md)) — a parser is a `Result`-returning function, and the
-combinators are the same idea lifted onto functions.
+```cpp
+fp::choice(fp::keyword("true"), fp::keyword("false"), fp::keyword("null"));
+
+fp::sep_by(fp::lexeme(fp::digit), fp::symbol(','));   // "1, 2, 3"
+```
+
+## Whitespace-aware lexing
+
+`lexeme(p)` parses `p` and then eats trailing whitespace; `symbol(c)` and
+`keyword(s)` are the lexeme'd forms of `char_`/`string_`. Use them to make the
+grammar ignore insignificant whitespace without sprinkling `space` parsers.
+
+```cpp
+fp::symbol(',');            // ',' plus any whitespace after it
+fp::keyword("true");        // "true" plus any whitespace after it
+fp::lexeme(fp::digit);      // a digit plus any whitespace after it
+```
+
+## Recursion
+
+A grammar that refers to itself (JSON, expressions) needs `ref`: declare the
+parser, build the parsers that use it, then assign it. `ref(p)` defers the
+reference to *parse time*, so you don't have to capture a not-yet-assigned
+parser in a lambda.
+
+```cpp
+fp::Parser<Json> value;                       // 1. declare
+
+auto arr = fp::between(fp::symbol('['), fp::symbol(']'),
+                       fp::sep_by(fp::ref(value), fp::symbol(',')));   // 2. use ref
+// ...
+
+value = fp::choice(/* ... */);                // 3. assign last
+```
+
+## Worked example: JSON
+
+```cpp
+#include <fp/all.hpp>
+#include <variant>
+#include <vector>
+
+struct JsonNull {};
+struct Json {
+    using Array  = std::vector<Json>;
+    using Object = std::vector<std::pair<std::string, Json>>;
+    std::variant<JsonNull, bool, double, std::string, Array, Object> v;
+};
+
+int main() {
+    using namespace fp;
+
+    Parser<std::string> json_string = lexeme(map(
+        between(char_('"'), char_('"'), many(none_of('"'))),
+        [](std::vector<char> cs) { return std::string(cs.begin(), cs.end()); }));
+
+    Parser<double> json_number = lexeme(map(
+        some(satisfy([](char c) {
+            return std::isdigit((unsigned char)c) || c=='-' || c=='.' || c=='e' || c=='E';
+        })),
+        [](std::vector<char> cs) { return std::stod(std::string(cs.begin(), cs.end())); }));
+
+    auto jtrue  = map(keyword("true"),  [](auto) { return Json{true}; });
+    auto jfalse = map(keyword("false"), [](auto) { return Json{false}; });
+    auto jnull  = map(keyword("null"),  [](auto) { return Json{JsonNull{}}; });
+    auto jstr   = map(json_string, [](std::string s) { return Json{s}; });
+    auto jnum   = map(json_number, [](double d) { return Json{d}; });
+
+    Parser<Json> value;                                   // recursion
+    auto jarray = map(between(symbol('['), symbol(']'),
+                              sep_by(ref(value), symbol(','))),
+                      [](Json::Array xs) { return Json{xs}; });
+    auto member = seq(json_string, preceded(symbol(':'), ref(value)));  // pair<string,Json>
+    auto jobject = map(between(symbol('{'), symbol('}'),
+                               sep_by(member, symbol(','))),
+                       [](Json::Object ps) { return Json{ps}; });
+
+    value = preceded(whitespace(), choice(jnull, jtrue, jfalse,
+                                          jnum, jstr, jarray, jobject));
+
+    auto r = run(value, R"({"name": "ada", "tags": [1, 2, 3], "ok": true})");
+    // r.is_ok() (inspecting the tree is a `match` over `v`)
+}
+```
+
+The whole grammar is primitives + sequencing + `choice` + one `ref` for the
+recursion — no cursor, no state machine.
 
 ## Errors
 
-`run` returns `Result<T>` with the parser's message on failure:
+`run(p, input)` returns `Result<T>` with the parser's message on failure, so
+parse errors compose with the rest of the library.
 
 ```cpp
-run(list, "aa,,");   // err("expected item after separator")
-run(word_str, "");   // err(...)
+run(list, "1,,2");   // err("expected item after separator")
 ```
 
-Parse errors are `Result` strings — no exceptions — so they compose with the
-rest of the library (`>>=`, `map`, `context`, …). The primitive `char_`/`string_`
-don't cover character classes; compose `alt(char_('a'), char_('b'))` chains, or
-add a `satisfy(pred)` combinator of your own on top of these primitives.
+The primitives (`char_`/`string_`/`satisfy`) are all you need to define new
+building blocks; the rest is composition.

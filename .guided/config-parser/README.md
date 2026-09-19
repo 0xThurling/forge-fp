@@ -16,53 +16,49 @@ debug=false
 
 ---
 
-## Stage 1 — The `satisfy` primitive
+## Stage 1 — The `satisfy` primitive (built in)
 
-Goal: "match any char satisfying `pred`" — the seed of the whole grammar.
+Goal: "match any char satisfying `pred`" — the seed of the whole grammar. It
+ships in `parse.hpp`, along with ready-made character classes:
 
 ```cpp
 #include <fp/parse.hpp>
-#include <string_view>
 
-template <class P>
-fp::Parser<char> satisfy(P pred) {
-    return fp::Parser<char>([pred](std::string_view s)
-        -> fp::Result<std::pair<char, std::string_view>> {
-        if (s.empty() || !pred(s.front()))
-            return fp::err<std::pair<char, std::string_view>>("no match");
-        return fp::ok(std::pair<char, std::string_view>{s.front(), s.substr(1)});
-    });
-}
+// fp::satisfy(pred)   -> Parser<char>
+// fp::digit, fp::letter, fp::alnum, fp::space   -> Parser<char>
 ```
 
-**Verify:** compiles. (`satisfy` is `template`, so it's only checked when used.)
+**Verify:** `fp::run(fp::digit, "5")` is `ok('5')`; `fp::run(fp::digit, "x")` fails.
 
 **Concept — a parser is a value.** `Parser<T>` is
-`std::function<Result<pair<T, string_view>>(string_view)>`. `satisfy` returns
-one; everything below combines them.
+`std::function<Result<pair<T, string_view>>(string_view)>`. `satisfy` is the
+primitive; `digit`/`letter`/… are thin wrappers over it; everything below
+*combines* them.
 
-## Stage 2 — `letter` and `alnum` classes
+## Stage 2 — Character classes for free
 
-Goal: character classes from `satisfy`.
+Goal: identifiers are runs of letters; values are runs of letters/digits. Use
+the built-in classes directly.
 
 ```cpp
-#include <cctype>
-auto letter = satisfy([](char c) { return std::isalpha((unsigned char)c); });
-auto alnum  = satisfy([](char c) { return std::isalnum((unsigned char)c); });
+using namespace fp;
+// fp::letter, fp::alnum are already `Parser<char>`
 ```
 
-**Verify:** `fp::run(letter, "a")` is `ok('a')`, `fp::run(letter, "1")` fails.
+**Verify:** `fp::run(fp::letter, "a")` is `ok('a')`; `fp::run(fp::letter, "1")` fails.
 
-**Concept — composition over enumeration.** One `satisfy` gives you *any* class —
-no `char_` per character.
+**Concept — composition over enumeration.** One primitive gives you *every*
+class — no `char_` per character.
 
 ## Stage 3 — `word` and `token` (a run of a class)
 
 Goal: `some(p)` repeats a parser; `map` collects the result into a string.
 
 ```cpp
-auto word  = fp::map(fp::some(letter), [](std::vector<char> const& cs) { return std::string(cs.begin(), cs.end()); });
-auto token = fp::map(fp::some(alnum),  [](std::vector<char> const& cs) { return std::string(cs.begin(), cs.end()); });
+using namespace fp;
+auto to_string = [](std::vector<char> const& cs) { return std::string(cs.begin(), cs.end()); };
+auto word  = map(some(letter), to_string);   // "port", "host"
+auto token = map(some(alnum),  to_string);   // "8080", "false"
 ```
 
 **Verify:** `fp::run(word, "port")` is `ok("port")`; `fp::run(token, "8080")` is `ok("8080")`.
@@ -72,19 +68,24 @@ the value — the same `map` idea as `Result`, lifted to functions.
 
 ## Stage 4 — A `key=value` pair
 
-Goal: parse `key`, remember it, parse `=`, parse `value`, pair them.
+Goal: parse `key`, `=`, `value`, and pair them up. With `seq` + `preceded` this
+is one line — no lambdas, no captures:
 
 ```cpp
-auto pair = fp::and_then(word, [token](std::string k) {
-    return fp::map(fp::and_then(fp::string_("="), [token](std::string) { return token; }),
-                   [k](std::string v) { return std::pair{k, v}; });
-});
+using namespace fp;
+auto pair = seq(word, preceded(char_('='), token));   // Parser<pair<string, string>>
 ```
+
+- `preceded(char_('='), token)` = parse `=`, then the value, keep **value**.
+- `seq(key, value)` = parse both, return `pair{key, value}`.
 
 **Verify:** `fp::run(pair, "port=8080")` is `ok({"port", "8080"})`.
 
-**Concept — `and_then` threads context.** The key `k` is captured and used after
-the value is parsed — the parser analogue of `>>=`.
+**Concept — no context, so no `and_then`.** `and_then` is for when the next step
+*depends on* the value (JSON does — see below); here the two halves are
+independent, so `seq`/`preceded` say it directly. (Note: for grammars where
+whitespace is insignificant, `symbol(c)` and `lexeme(p)` are the
+whitespace-eating versions — not needed here, since a config is line-based.)
 
 ## Stage 5 — A whole file: pairs separated by newlines
 
@@ -133,18 +134,15 @@ but worthwhile exercise — see the extensions.)
 Goal: group pairs under `[section]` headers.
 
 ```cpp
-auto section = fp::map(fp::and_then(fp::string_("["), [word](std::string) {
-    return fp::and_then(word, [](std::string name) {
-        return fp::map(fp::string_("]"), [name](std::string) { return name; });
-    });
-}), [](auto s) { return s; });
+using namespace fp;
+auto section = between(char_('['), char_(']'), word);   // Parser<string>
 ```
 
-**Verify:** parse `[server]\nport=8080` and confirm you can remember the current
-section name (thread it through `and_then`).
+**Verify:** `fp::run(section, "[server]")` is `ok("server")`.
 
-**Concept — context again.** Sections are context that applies to the pairs that
-follow — `and_then` carries it.
+**Concept — `between` is the bracketed form.** `between(open, close, p)` parses
+`open`, then `p`, then `close`, keeping `p` — exactly the "delimited" shape you'd
+otherwise write as two nested `and_then`s.
 
 ## Stage 8 — Validate: types
 

@@ -1,10 +1,12 @@
 #pragma once
 #include "forgefp/fp/result.hpp"
+#include <cctype>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace fp {
@@ -31,6 +33,33 @@ inline Parser<std::string> string_(std::string_view t) {
     return ok(
         std::pair<std::string, std::string_view>{t, s.substr(t.size())});
   };
+}
+
+// --- the primitive: one char matching a predicate ---
+template <class Pred> Parser<char> satisfy(Pred pred) {
+  return [pred = std::move(pred)](
+             std::string_view s) -> Result<std::pair<char, std::string_view>> {
+    if (s.empty() || !pred(s.front()))
+      return err<std::pair<char, std::string_view>>("no match");
+    return ok(std::pair<char, std::string_view>{s.front(), s.substr(1)});
+  };
+}
+
+// --- character classes ---
+inline Parser<char> digit = satisfy(
+    [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+inline Parser<char> letter = satisfy(
+    [](char c) { return std::isalpha(static_cast<unsigned char>(c)) != 0; });
+inline Parser<char> alnum = satisfy(
+    [](char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0; });
+inline Parser<char> space = satisfy(
+    [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; });
+
+template <class... Cs> Parser<char> one_of(Cs... cs) {
+  return satisfy([cs...](char c) { return ((c == cs) || ...); });
+}
+template <class... Cs> Parser<char> none_of(Cs... cs) {
+  return satisfy([cs...](char c) { return ((c != cs) && ...); });
 }
 
 template <class T>
@@ -141,6 +170,53 @@ Parser<A> alt(Parser<A> a, Parser<A> b) {
     auto r = a(s);
     return r.is_ok() ? r : b(s);
   };
+}
+
+// --- sequencing (no context needed) ---
+template <class A, class B>
+Parser<std::pair<A, B>> seq(Parser<A> a, Parser<B> b) {
+  return and_then(a, [b](A av) {
+    return map(b, [av](B bv) { return std::make_pair(av, bv); });
+  });
+}
+// parse `a`, then `b`, keep b's value
+template <class A, class B> Parser<B> preceded(Parser<A> a, Parser<B> b) {
+  return and_then(a, [b](A) { return b; });
+}
+// parse `a`, then `b`, keep a's value
+template <class A, class B> Parser<A> terminated(Parser<A> a, Parser<B> b) {
+  return and_then(a, [b](A av) { return map(b, [av](B) { return av; }); });
+}
+// parse open, p, close — keep p
+template <class O, class C, class T>
+Parser<T> between(Parser<O> open, Parser<C> close, Parser<T> p) {
+  return terminated(preceded(std::move(open), std::move(p)), std::move(close));
+}
+
+// --- whitespace-aware lexing ---
+inline Parser<std::monostate> whitespace() {
+  static Parser<std::monostate> ws =
+      map(many(space), [](auto) { return std::monostate{}; });
+  return ws;
+}
+template <class T> Parser<T> lexeme(Parser<T> p) {
+  return terminated(std::move(p), whitespace());
+}
+inline Parser<char> symbol(char c) { return lexeme(char_(c)); }
+inline Parser<std::string> keyword(std::string_view s) {
+  return lexeme(string_(s));
+}
+
+// --- alternation, variadic ---
+template <class A> Parser<A> choice(Parser<A> a) { return a; }
+template <class A, class... Rest>
+Parser<A> choice(Parser<A> a, Parser<A> b, Rest... rest) {
+  return alt(std::move(a), choice(std::move(b), std::move(rest)...));
+}
+
+// --- recursion: defer a parser reference to parse time ---
+template <class T> Parser<T> ref(Parser<T> &p) {
+  return [&p](std::string_view s) { return p(s); };
 }
 
 template <class T> Result<T> run(Parser<T> p, std::string_view s) {
