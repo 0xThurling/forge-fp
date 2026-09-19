@@ -1,3 +1,4 @@
+#include "fp/ranges.hpp"
 #include <fp/all.hpp>
 
 #include <gtest/gtest.h>

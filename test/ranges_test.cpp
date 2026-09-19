@@ -21,6 +21,19 @@ TEST(Ranges, WorkOnAnyRange) {
   EXPECT_EQ(fp::fold_left(iota, 0, std::plus<>{}), 10);
 }
 
+TEST(Ranges, ZipHeterogeneousIteratorTypes) {
+  // Regression: `range zip` used to declare both iterators in one `auto`
+  // statement, which only compiles when both ranges share an iterator type.
+  std::array<int, 3> a = {1, 2, 3};
+  std::list<std::string> b = {"x", "y"};
+  EXPECT_EQ(fp::zip(a, b),
+            (std::vector<std::pair<int, std::string>>{{1, "x"}, {2, "y"}}));
+
+  auto iota = std::views::iota(10, 13);
+  EXPECT_EQ(fp::zip(iota, b),
+            (std::vector<std::pair<int, std::string>>{{10, "x"}, {11, "y"}}));
+}
+
 TEST(Ranges, EagerSliceAndCombine) {
   std::vector<int> v = {1, 2, 3, 4, 5};
   EXPECT_EQ(fp::to_vector(fp::take(v, 2)), (std::vector<int>{1, 2}));
