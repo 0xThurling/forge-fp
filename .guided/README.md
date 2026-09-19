@@ -1,6 +1,6 @@
 # ForgeFP — Guided Projects
 
-Seven focused projects plus a final **capstone** that pulls the whole library
+Nine focused projects plus a final **capstone** that pulls the whole library
 into one program. Each step gives you most of the code and explains the
 **functional concept** behind it; each project ends with an open **challenge**
 where you write the code yourself.

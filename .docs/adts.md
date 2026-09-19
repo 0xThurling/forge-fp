@@ -234,6 +234,27 @@ auto r9 = fp::from_expected(e);
 `unwrap` throws `std::runtime_error` with the stored message on failure;
 `to_expected` / `from_expected` bridge to `std::expected` on C++23.
 
+### Observing without escaping: taps
+
+Sometimes you want a side effect on one outcome (log the error, record a metric)
+without changing the value or the control flow. `tap_ok` / `tap_err` run a
+callback on the relevant side and return the container unchanged:
+
+```cpp
+auto r = fp::tap_err(fp::err<int>("disk full"),
+                     [](std::string const& e) { log(e); });   // still err("disk full")
+auto v = fp::tap_ok(fp::ok(42),
+                    [](int x) { metrics.record(x); });          // still ok(42)
+```
+
+`fp::fail("...")` is a short name for an error of the *inferred* type when the
+target is known from context:
+
+```cpp
+fp::Result<int> r1 = fp::fail("bad");                 // err("bad")
+fp::Validation<int> v1 = fp::fail("bad");             // err({"bad"})
+```
+
 ## `std::optional<T>` — a value that may be absent
 
 ```cpp

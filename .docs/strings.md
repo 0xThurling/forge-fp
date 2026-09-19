@@ -50,7 +50,19 @@ join(std::vector<int>{1,2,3}, "-");                  // "1-2-3"  (range overload
 ```
 
 `split`/`join` are inverses; both `split` overloads (char and string delimiter)
-and both `join` overloads (vector and range) exist.
+and both `join` overloads (vector and range) exist. `join` streams each element
+through `operator<<`, so ranges of numbers and other streamable types work.
+
+When you don't need owned copies, `split_view` returns `vector<string_view>`
+pointing into the original buffer — no allocation per piece:
+
+```cpp
+auto fields = split_view("a,b,c", ',');   // views into the literal
+fields[1];                                 // "b"
+```
+
+Both split flavors drop a trailing empty field (`"a,b,"` → `{"a","b"}`) and
+treat an empty delimiter as "no split".
 
 ## Prefixes, suffixes, replacement
 

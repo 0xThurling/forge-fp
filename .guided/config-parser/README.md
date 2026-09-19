@@ -30,8 +30,9 @@ ships in `parse.hpp`, along with ready-made character classes:
 
 **Verify:** `fp::run(fp::digit, "5")` is `ok('5')`; `fp::run(fp::digit, "x")` fails.
 
-**Concept — a parser is a value.** `Parser<T>` is
-`std::function<Result<pair<T, string_view>>(string_view)>`. `satisfy` is the
+**Concept — a parser is a value.** `Parser<T>` wraps
+`(string_view, offset) -> Either<ParseError, pair<T, string_view>>` — the offset
+threading is what lets failures report a line/column. `satisfy` is the
 primitive; `digit`/`letter`/… are thin wrappers over it; everything below
 *combines* them.
 

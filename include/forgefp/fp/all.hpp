@@ -15,6 +15,7 @@
 #include "forgefp/fp/memoize.hpp"
 #include "forgefp/fp/ops.hpp"
 #include "forgefp/fp/parse.hpp"
+#include "forgefp/fp/print.hpp"
 #include "forgefp/fp/ranges.hpp"
 #include "forgefp/fp/result.hpp"
 #include "forgefp/fp/stream.hpp"

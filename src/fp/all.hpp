@@ -15,6 +15,7 @@
 #include "memoize.hpp"
 #include "ops.hpp"
 #include "parse.hpp"
+#include "print.hpp"
 #include "ranges.hpp"
 #include "result.hpp"
 #include "stream.hpp"

@@ -1,6 +1,7 @@
 #pragma once
 #include "forgefp/fp/result.hpp"
 #include <cctype>
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
@@ -12,57 +13,88 @@
 
 namespace fp {
 
-// A parser: `string_view -> Result<(value, leftover)>`. A distinct type (not a
-// bare `std::function`) so it can carry operators (`>>`, `<<`, `|`, `>>=`,
-// `*`, `%`). Constructs implicitly from any matching callable, and callable like
-// a function.
+// A parse error: a message plus the byte offset where it occurred. `run`
+// converts the offset to a line/column for the user.
+struct ParseError {
+  std::string message;
+  std::size_t offset = 0;
+};
+
+template <class T>
+using PResult = Either<ParseError, std::pair<T, std::string_view>>;
+
+template <class T> PResult<T> p_ok(T v, std::string_view rest) {
+  return PResult<T>::ok(std::pair<T, std::string_view>{std::move(v), rest});
+}
+
+template <class T> PResult<T> p_err(std::string msg, std::size_t off) {
+  return PResult<T>::err(ParseError{std::move(msg), off});
+}
+
+// A parser: `(remaining input, absolute offset) -> PResult<value>`.
+// Tracking the offset (rather than only the remaining suffix) is what lets
+// errors carry real positions. Callable like a function; constructs implicitly
+// from a matching lambda; carries operators.
 template <class T> struct Parser {
   using value_type = T;
-  using result_type = Result<std::pair<T, std::string_view>>;
+  using result_type = PResult<T>;
+  using fn_type = std::function<result_type(std::string_view, std::size_t)>;
 
-  std::function<result_type(std::string_view)> fn;
+  fn_type fn;
 
   Parser() = default;
 
   template <class F>
     requires(!std::is_same_v<std::remove_cvref_t<F>, Parser>) &&
-            std::is_invocable_r_v<result_type, F &, std::string_view>
+            std::is_invocable_r_v<result_type, F &, std::string_view, std::size_t>
   Parser(F &&f) : fn(std::forward<F>(f)) {}
 
-  result_type operator()(std::string_view s) const { return fn(s); }
+  result_type operator()(std::string_view s, std::size_t off = 0) const {
+    return fn(s, off);
+  }
+
+  // Annotate failures with context (prefixes the message).
+  Parser label(std::string msg) const {
+    auto p = *this;
+    return Parser([p, msg = std::move(msg)](std::string_view s,
+                                            std::size_t off) -> result_type {
+      auto r = p(s, off);
+      if (r.is_ok())
+        return r;
+      return result_type::err(
+          ParseError{msg + ": " + r.error().message, r.error().offset});
+    });
+  }
 };
 
+// --- primitives -------------------------------------------------------------
+
 inline Parser<char> char_(char c) {
-  return [c](std::string_view s) -> Result<std::pair<char, std::string_view>> {
+  return [c](std::string_view s, std::size_t off) -> PResult<char> {
     if (s.empty() || s.front() != c)
-      return err<std::pair<char, std::string_view>>("expected '" +
-                                                    std::string(1, c) + "'");
-    return ok(std::pair<char, std::string_view>{c, s.substr(1)});
+      return p_err<char>("expected '" + std::string(1, c) + "'", off);
+    return p_ok(c, s.substr(1));
   };
 }
 
 inline Parser<std::string> string_(std::string_view t) {
-  return [t = std::string(t)](std::string_view s)
-      -> Result<std::pair<std::string, std::string_view>> {
+  return [t = std::string(t)](std::string_view s,
+                              std::size_t off) -> PResult<std::string> {
     if (s.size() < t.size() || s.substr(0, t.size()) != t)
-      return err<std::pair<std::string, std::string_view>>("expected \"" + t +
-                                                           "\"");
-    return ok(
-        std::pair<std::string, std::string_view>{t, s.substr(t.size())});
+      return p_err<std::string>("expected \"" + t + "\"", off);
+    return p_ok(t, s.substr(t.size()));
   };
 }
 
-// --- the primitive: one char matching a predicate ---
 template <class Pred> Parser<char> satisfy(Pred pred) {
-  return [pred = std::move(pred)](
-             std::string_view s) -> Result<std::pair<char, std::string_view>> {
+  return [pred = std::move(pred)](std::string_view s,
+                                  std::size_t off) -> PResult<char> {
     if (s.empty() || !pred(s.front()))
-      return err<std::pair<char, std::string_view>>("no match");
-    return ok(std::pair<char, std::string_view>{s.front(), s.substr(1)});
+      return p_err<char>("no match", off);
+    return p_ok(s.front(), s.substr(1));
   };
 }
 
-// --- character classes ---
 inline Parser<char> digit = satisfy(
     [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
 inline Parser<char> letter = satisfy(
@@ -79,138 +111,168 @@ template <class... Cs> Parser<char> none_of(Cs... cs) {
   return satisfy([cs...](char c) { return ((c != cs) && ...); });
 }
 
-template <class T>
-Parser<std::vector<T>> many(Parser<T> p) {
-  return [p = std::move(p)](std::string_view s)
-      -> Result<std::pair<std::vector<T>, std::string_view>> {
+// Succeeds only at the end of input, yielding nothing.
+inline Parser<std::monostate> eof = [](std::string_view s,
+                                       std::size_t off) -> PResult<std::monostate> {
+  if (!s.empty())
+    return p_err<std::monostate>("expected end of input", off);
+  return p_ok(std::monostate{}, s);
+};
+
+// --- repetition and choice --------------------------------------------------
+
+template <class T> Parser<std::vector<T>> many(Parser<T> p) {
+  return [p = std::move(p)](std::string_view s,
+                            std::size_t off) -> PResult<std::vector<T>> {
     std::vector<T> out;
+    std::size_t cur = off;
     for (;;) {
-      auto r = p(s);
+      auto r = p(s, cur);
       if (!r.is_ok())
         break;
-      out.push_back(r.value().first);
+      std::size_t consumed = s.size() - r.value().second.size();
+      if (consumed == 0)
+        break; // avoid spinning on a zero-width parser
+      out.push_back(std::move(r.value().first));
       s = r.value().second;
+      cur += consumed;
     }
-    return ok(std::pair<std::vector<T>, std::string_view>{std::move(out), s});
+    return p_ok(std::move(out), s);
   };
 }
 
-template <class T>
-Parser<std::vector<T>> some(Parser<T> p) {
-  return [p = std::move(p)](std::string_view s)
-      -> Result<std::pair<std::vector<T>, std::string_view>> {
+template <class T> Parser<std::vector<T>> some(Parser<T> p) {
+  return [p = std::move(p)](std::string_view s,
+                            std::size_t off) -> PResult<std::vector<T>> {
     std::vector<T> out;
+    std::size_t cur = off;
     for (;;) {
-      auto r = p(s);
+      auto r = p(s, cur);
       if (!r.is_ok())
         break;
-      out.push_back(r.value().first);
+      std::size_t consumed = s.size() - r.value().second.size();
+      if (consumed == 0)
+        break;
+      out.push_back(std::move(r.value().first));
       s = r.value().second;
+      cur += consumed;
     }
     if (out.empty())
-      return err<std::pair<std::vector<T>, std::string_view>>(
-          "expected at least one item");
-    return ok(std::pair<std::vector<T>, std::string_view>{std::move(out), s});
+      return p_err<std::vector<T>>("expected at least one item", off);
+    return p_ok(std::move(out), s);
   };
+}
+
+template <class T> Parser<std::vector<T>> many1(Parser<T> p) {
+  return some(std::move(p));
 }
 
 template <class T, class D>
 Parser<std::vector<T>> sep_by(Parser<T> p, Parser<D> sep) {
-  return [p = std::move(p), sep = std::move(sep)](std::string_view s)
-      -> Result<std::pair<std::vector<T>, std::string_view>> {
+  return [p = std::move(p),
+          sep = std::move(sep)](std::string_view s,
+                                std::size_t off) -> PResult<std::vector<T>> {
     std::vector<T> out;
-    auto first = p(s);
+    std::size_t cur = off;
+    auto first = p(s, cur);
     if (!first.is_ok())
-      return ok(std::pair<std::vector<T>, std::string_view>{std::move(out), s});
-    out.push_back(first.value().first);
+      return p_ok(std::move(out), s);
+    out.push_back(std::move(first.value().first));
+    cur += s.size() - first.value().second.size();
     s = first.value().second;
+
     for (;;) {
-      auto sp = sep(s);
+      auto sp = sep(s, cur);
       if (!sp.is_ok())
-        return ok(
-            std::pair<std::vector<T>, std::string_view>{std::move(out), s});
-      auto item = p(sp.value().second);
+        return p_ok(std::move(out), s);
+      std::size_t after_sep = cur + (s.size() - sp.value().second.size());
+      auto item = p(sp.value().second, after_sep);
       if (!item.is_ok())
-        return err<std::pair<std::vector<T>, std::string_view>>(
-            "expected item after separator");
-      out.push_back(item.value().first);
+        return p_err<std::vector<T>>("expected item after separator", after_sep);
+      out.push_back(std::move(item.value().first));
       s = item.value().second;
+      cur = after_sep + (sp.value().second.size() - s.size());
     }
   };
 }
 
 template <class T>
 Parser<std::optional<T>> optional(Parser<T> p) {
-  return [p = std::move(p)](std::string_view s)
-      -> Result<std::pair<std::optional<T>, std::string_view>> {
-    auto r = p(s);
+  return [p = std::move(p)](std::string_view s,
+                            std::size_t off) -> PResult<std::optional<T>> {
+    auto r = p(s, off);
     if (r.is_ok())
-      return ok(std::pair<std::optional<T>, std::string_view>{r.value().first,
-                                                              r.value().second});
-    return ok(
-        std::pair<std::optional<T>, std::string_view>{std::nullopt, s});
+      return p_ok(std::optional<T>(std::move(r.value().first)),
+                  r.value().second);
+    return p_ok(std::optional<T>(std::nullopt), s);
   };
 }
+
+// Try `a`; on failure, try `b` from the same position.
+template <class T> Parser<T> alt(Parser<T> a, Parser<T> b) {
+  return [a = std::move(a), b = std::move(b)](std::string_view s,
+                                              std::size_t off) -> PResult<T> {
+    auto r = a(s, off);
+    return r.is_ok() ? r : b(s, off);
+  };
+}
+
+// --- sequencing -------------------------------------------------------------
 
 template <class A, class F>
 auto map(Parser<A> p, F f) -> Parser<std::invoke_result_t<F, A>> {
   using B = std::invoke_result_t<F, A>;
-  return [p = std::move(p), f = std::move(f)](std::string_view s)
-      -> Result<std::pair<B, std::string_view>> {
-    auto r = p(s);
+  return [p = std::move(p),
+          f = std::move(f)](std::string_view s, std::size_t off) -> PResult<B> {
+    auto r = p(s, off);
     if (!r.is_ok())
-      return err<std::pair<B, std::string_view>>(r.error());
-    return ok(
-        std::pair<B, std::string_view>{f(r.value().first), r.value().second});
+      return p_err<B>(r.error().message, r.error().offset);
+    return p_ok(f(std::move(r.value().first)), r.value().second);
   };
 }
 
 template <class A, class F>
-auto and_then(Parser<A> p, F f)
-    -> Parser<
-        typename std::invoke_result_t<F, A>::result_type::value_type::first_type> {
-  using ResultB = typename std::invoke_result_t<F, A>::result_type;
-  using PairB = typename ResultB::value_type;
-  using B = typename PairB::first_type;
-  return Parser<B>([p = std::move(p), f = std::move(f)](std::string_view s)
-                       -> Result<std::pair<B, std::string_view>> {
-    auto r = p(s);
+auto and_then(Parser<A> p, F f) -> Parser<typename std::invoke_result_t<F, A>::value_type> {
+  using B = typename std::invoke_result_t<F, A>::value_type;
+  return [p = std::move(p),
+          f = std::move(f)](std::string_view s, std::size_t off) -> PResult<B> {
+    auto r = p(s, off);
     if (!r.is_ok())
-      return err<std::pair<B, std::string_view>>(r.error());
-    return f(r.value().first)(r.value().second);
-  });
-}
-
-template <class A>
-Parser<A> alt(Parser<A> a, Parser<A> b) {
-  return [a = std::move(a), b = std::move(b)](std::string_view s) {
-    auto r = a(s);
-    return r.is_ok() ? r : b(s);
+      return p_err<B>(r.error().message, r.error().offset);
+    std::size_t next = off + (s.size() - r.value().second.size());
+    return f(std::move(r.value().first))(r.value().second, next);
   };
 }
 
-// --- sequencing (no context needed) ---
 template <class A, class B>
 Parser<std::pair<A, B>> seq(Parser<A> a, Parser<B> b) {
-  return and_then(a, [b](A av) {
-    return map(b, [av](B bv) { return std::make_pair(av, bv); });
+  return and_then(a, [b = std::move(b)](A av) {
+    return map(b, [av = std::move(av)](B bv) {
+      return std::make_pair(std::move(av), std::move(bv));
+    });
   });
 }
+
 // parse `a`, then `b`, keep b's value
 template <class A, class B> Parser<B> preceded(Parser<A> a, Parser<B> b) {
-  return and_then(a, [b](A) { return b; });
+  return and_then(a, [b = std::move(b)](A) { return b; });
 }
+
 // parse `a`, then `b`, keep a's value
 template <class A, class B> Parser<A> terminated(Parser<A> a, Parser<B> b) {
-  return and_then(a, [b](A av) { return map(b, [av](B) { return av; }); });
+  return and_then(a, [b = std::move(b)](A av) {
+    return map(b, [av = std::move(av)](B) { return av; });
+  });
 }
+
 // parse open, p, close — keep p
 template <class O, class C, class T>
 Parser<T> between(Parser<O> open, Parser<C> close, Parser<T> p) {
   return terminated(preceded(std::move(open), std::move(p)), std::move(close));
 }
 
-// --- whitespace-aware lexing ---
+// --- whitespace-aware lexing ------------------------------------------------
+
 inline Parser<std::monostate> whitespace() {
   static Parser<std::monostate> ws =
       map(many(space), [](auto) { return std::monostate{}; });
@@ -224,32 +286,99 @@ inline Parser<std::string> keyword(std::string_view s) {
   return lexeme(string_(s));
 }
 
-// --- alternation, variadic ---
-template <class A> Parser<A> choice(Parser<A> a) { return a; }
-template <class A, class... Rest>
-Parser<A> choice(Parser<A> a, Parser<A> b, Rest... rest) {
-  return alt(std::move(a), choice(std::move(b), std::move(rest)...));
-}
+// --- lookahead --------------------------------------------------------------
 
-// --- recursion: defer a parser reference to parse time ---
-template <class T> Parser<T> ref(Parser<T> &p) {
-  return [&p](std::string_view s) { return p(s); };
-}
-
-// --- always succeeds with `value`, consuming nothing (for `>>=`) ---
-template <class T> Parser<T> succeed(T value) {
-  return [value](std::string_view s) -> Result<std::pair<T, std::string_view>> {
-    return ok(std::pair<T, std::string_view>{value, s});
+// Run `p` but do not consume; yield its value.
+template <class T> Parser<T> peek(Parser<T> p) {
+  return [p = std::move(p)](std::string_view s,
+                            std::size_t off) -> PResult<T> {
+    auto r = p(s, off);
+    if (!r.is_ok())
+      return r;
+    return p_ok(std::move(r.value().first), s);
   };
 }
 
-// --- operators -------------------------------------------------------------
-// a >> b   : parse a then b, keep b
-// a << b   : parse a then b, keep a
-// a | b    : try a, else b (choice)
-// a >>= f  : parse a, then run the parser `f(value)` (bind)
-// *p       : zero or more p
-// p % sep  : one or more p separated by sep (sep_by)
+// Succeed (with no value) only if `p` fails; never consumes (negative
+// lookahead). Named `not_followed` to avoid `ops.hpp`'s `not_` logic operator.
+template <class T> Parser<std::monostate> not_followed(Parser<T> p) {
+  return [p = std::move(p)](std::string_view s,
+                            std::size_t off) -> PResult<std::monostate> {
+    auto r = p(s, off);
+    if (r.is_ok())
+      return p_err<std::monostate>("unexpected input", off);
+    return p_ok(std::monostate{}, s);
+  };
+}
+
+// --- variadic choice --------------------------------------------------------
+
+template <class T> Parser<T> choice(Parser<T> a) { return a; }
+template <class T, class... Rest>
+Parser<T> choice(Parser<T> a, Parser<T> b, Rest... rest) {
+  return alt(std::move(a), choice(std::move(b), std::move(rest)...));
+}
+
+// --- annotation -------------------------------------------------------------
+
+template <class T> Parser<T> label(Parser<T> p, std::string msg) {
+  return p.label(std::move(msg));
+}
+template <class T> Parser<T> context(Parser<T> p, std::string msg) {
+  return p.label(std::move(msg));
+}
+
+// --- left-associative operator chains ---------------------------------------
+
+// One or more `p` separated by `op`, folding left: `op` yields a binary
+// callable invocable as `T(T, T)`.
+template <class T, class F>
+Parser<T> chainl1(Parser<T> p, Parser<F> op) {
+  return [p = std::move(p), op = std::move(op)](
+             std::string_view s, std::size_t off) -> PResult<T> {
+    auto first = p(s, off);
+    if (!first.is_ok())
+      return first;
+    T acc = std::move(first.value().first);
+    std::size_t cur = off + (s.size() - first.value().second.size());
+    s = first.value().second;
+
+    for (;;) {
+      auto o = op(s, cur);
+      if (!o.is_ok())
+        break;
+      std::size_t rhs_off = cur + (s.size() - o.value().second.size());
+      auto rhs = p(o.value().second, rhs_off);
+      if (!rhs.is_ok())
+        return rhs;
+      acc = o.value().first(std::move(acc), std::move(rhs.value().first));
+      s = rhs.value().second;
+      cur = rhs_off + (o.value().second.size() - s.size());
+    }
+    return p_ok(std::move(acc), s);
+  };
+}
+
+// --- recursion and constants ------------------------------------------------
+
+template <class T> Parser<T> ref(Parser<T> &p) {
+  return [&p](std::string_view s, std::size_t off) { return p(s, off); };
+}
+
+// always succeeds with `value`, consuming nothing (for `>>=`)
+template <class T> Parser<T> succeed(T value) {
+  return [value](std::string_view s, std::size_t) -> PResult<T> {
+    return p_ok(value, s);
+  };
+}
+
+// --- operators --------------------------------------------------------------
+// a >> b : parse a then b, keep b
+// a << b : parse a then b, keep a
+// a | b  : try a, else b
+// a >>= f: parse a, then run the parser `f(value)`
+// *p     : zero or more
+// p % sep: sep_by(p, sep)
 
 template <class A, class B>
 Parser<B> operator>>(Parser<A> a, Parser<B> b) {
@@ -259,12 +388,11 @@ template <class A, class B>
 Parser<A> operator<<(Parser<A> a, Parser<B> b) {
   return terminated(std::move(a), std::move(b));
 }
-template <class A> Parser<A> operator|(Parser<A> a, Parser<A> b) {
+template <class T> Parser<T> operator|(Parser<T> a, Parser<T> b) {
   return alt(std::move(a), std::move(b));
 }
 template <class A, class F>
-auto operator>>=(Parser<A> a, F f)
-    -> Parser<typename std::invoke_result_t<F, A>::value_type> {
+auto operator>>=(Parser<A> a, F f) -> Parser<typename std::invoke_result_t<F, A>::value_type> {
   return and_then(std::move(a), std::move(f));
 }
 template <class T> Parser<std::vector<T>> operator*(Parser<T> p) {
@@ -275,11 +403,30 @@ Parser<std::vector<T>> operator%(Parser<T> p, Parser<D> sep) {
   return sep_by(std::move(p), std::move(sep));
 }
 
-template <class T> Result<T> run(Parser<T> p, std::string_view s) {
-  auto r = p(s);
-  if (!r.is_ok())
-    return err<T>(r.error());
-  return ok(r.value().first);
+// --- running ----------------------------------------------------------------
+
+inline std::pair<std::size_t, std::size_t>
+line_col(std::string_view input, std::size_t offset) {
+  std::size_t line = 1, col = 1;
+  for (std::size_t i = 0; i < offset && i < input.size(); ++i) {
+    if (input[i] == '\n') {
+      ++line;
+      col = 1;
+    } else {
+      ++col;
+    }
+  }
+  return {line, col};
+}
+
+template <class T> Result<T> run(Parser<T> p, std::string_view input) {
+  auto r = p(input, 0);
+  if (!r.is_ok()) {
+    auto [line, col] = line_col(input, r.error().offset);
+    return err<T>("line " + std::to_string(line) + ", col " +
+                  std::to_string(col) + ": " + r.error().message);
+  }
+  return ok(std::move(r.value().first));
 }
 
 } // namespace fp

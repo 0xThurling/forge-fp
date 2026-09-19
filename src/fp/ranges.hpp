@@ -96,11 +96,15 @@ template <std::ranges::range R, class F> bool none(R &&r, F pred) {
   return std::ranges::none_of(r, pred);
 }
 
-template <std::ranges::range R, class F> size_t count(R &&r, F pred) {
+template <std::ranges::range R, class F>
+  requires std::predicate<F &, std::ranges::range_value_t<R>>
+size_t count(R &&r, F pred) {
   return std::ranges::count_if(r, pred);
 }
 
-template <std::ranges::range R, class T> size_t count(R &&r, T const &v) {
+template <std::ranges::range R, class T>
+  requires(!std::predicate<T &, std::ranges::range_value_t<R>>)
+size_t count(R &&r, T const &v) {
   return std::ranges::count(r, v);
 }
 
@@ -221,6 +225,77 @@ std::optional<std::ranges::range_value_t<R>> maximum(R &&r) {
   return *std::ranges::max_element(r);
 }
 
+// --- parity with vec.hpp over any range -----------------------------------
+
+template <std::ranges::range R, class F>
+auto take_while(R &&r, F pred) {
+  using T = std::ranges::range_value_t<R>;
+  std::vector<T> out;
+  for (auto &&x : r) {
+    if (!pred(x))
+      break;
+    out.push_back(std::forward<decltype(x)>(x));
+  }
+  return out;
+}
+
+template <std::ranges::range R, class F>
+auto drop_while(R &&r, F pred) {
+  using T = std::ranges::range_value_t<R>;
+  std::vector<T> out;
+  auto it = std::ranges::begin(r);
+  auto end = std::ranges::end(r);
+  for (; it != end && pred(*it); ++it) {
+  }
+  for (; it != end; ++it)
+    out.push_back(*it);
+  return out;
+}
+
+template <std::ranges::range R> auto unique(R &&r) {
+  using T = std::ranges::range_value_t<R>;
+  std::vector<T> out(r.begin(), r.end());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  return out;
+}
+
+template <std::ranges::range R> auto sort(R &&r) {
+  using T = std::ranges::range_value_t<R>;
+  std::vector<T> out(r.begin(), r.end());
+  std::ranges::sort(out);
+  return out;
+}
+
+template <std::ranges::range R, class F> auto sort_by(R &&r, F key_fn) {
+  using T = std::ranges::range_value_t<R>;
+  std::vector<T> out(r.begin(), r.end());
+  std::ranges::sort(out, [&](T const &a, T const &b) {
+    return key_fn(a) < key_fn(b);
+  });
+  return out;
+}
+
+template <std::ranges::range R, class F> auto partition(R &&r, F pred) {
+  using T = std::ranges::range_value_t<R>;
+  std::vector<T> yes, no;
+  for (auto &&x : r)
+    (pred(x) ? yes : no).push_back(std::forward<decltype(x)>(x));
+  return std::pair{std::move(yes), std::move(no)};
+}
+
+template <std::ranges::range R, class F> auto span(R &&r, F pred) {
+  using T = std::ranges::range_value_t<R>;
+  auto it = std::ranges::find_if_not(r, pred);
+  std::vector<T> head, rest;
+  bool in_head = true;
+  for (auto i = std::ranges::begin(r); i != std::ranges::end(r); ++i) {
+    if (i == it)
+      in_head = false;
+    (in_head ? head : rest).push_back(*i);
+  }
+  return std::pair{std::move(head), std::move(rest)};
+}
+
 // --- curried (pipe-friendly) forms ----------------------------------------
 // Enable point-free collection pipelines:
 //   fp::out(fp::into(v) | fp::filter(fp::gt(0)) | fp::map(fp::plus(1)));
@@ -236,15 +311,53 @@ template <class F> auto filter(F pred) {
     return fp::filter(std::forward<decltype(r)>(r), pred);
   };
 }
+template <class F> auto take_while(F pred) {
+  return [pred = std::move(pred)](auto &&r) {
+    return fp::take_while(std::forward<decltype(r)>(r), pred);
+  };
+}
+template <class F> auto drop_while(F pred) {
+  return [pred = std::move(pred)](auto &&r) {
+    return fp::drop_while(std::forward<decltype(r)>(r), pred);
+  };
+}
+template <class F> auto flat_map(F f) {
+  return [f = std::move(f)](auto &&r) {
+    return fp::flat_map(std::forward<decltype(r)>(r), f);
+  };
+}
+template <class F> auto filter_map(F f) {
+  return [f = std::move(f)](auto &&r) {
+    return fp::filter_map(std::forward<decltype(r)>(r), f);
+  };
+}
+template <class F> auto group_by(F key_fn) {
+  return [key_fn = std::move(key_fn)](auto &&r) {
+    return fp::group_by(std::forward<decltype(r)>(r), key_fn);
+  };
+}
 template <class N> auto take(N n) {
   return [n](auto &&r) { return fp::take(std::forward<decltype(r)>(r), n); };
 }
 template <class N> auto drop(N n) {
   return [n](auto &&r) { return fp::drop(std::forward<decltype(r)>(r), n); };
 }
+template <class N> auto chunk(N n) {
+  return [n](auto &&r) { return fp::chunk(std::forward<decltype(r)>(r), n); };
+}
+template <class B, class F> auto zip_with(B b, F f) {
+  return [b = std::move(b), f = std::move(f)](auto &&r) {
+    return fp::zip_with(std::forward<decltype(r)>(r), b, f);
+  };
+}
 template <class T, class F> auto fold_left(T init, F op) {
   return [init = std::move(init), op = std::move(op)](auto &&r) mutable {
     return fp::fold_left(std::forward<decltype(r)>(r), std::move(init), op);
+  };
+}
+template <class T, class F> auto fold_right(T init, F op) {
+  return [init = std::move(init), op = std::move(op)](auto &&r) mutable {
+    return fp::fold_right(std::forward<decltype(r)>(r), std::move(init), op);
   };
 }
 template <class T, class F> auto scan(T init, F op) {
@@ -254,8 +367,34 @@ template <class T, class F> auto scan(T init, F op) {
 }
 template <class F> auto sort_by(F key_fn) {
   return [key_fn = std::move(key_fn)](auto &&r) {
-    using T = std::ranges::range_value_t<std::decay_t<decltype(r)>>;
-    return fp::sort_by(std::vector<T>(r.begin(), r.end()), key_fn);
+    return fp::sort_by(std::forward<decltype(r)>(r), key_fn);
   };
+}
+template <class F> auto partition(F pred) {
+  return [pred = std::move(pred)](auto &&r) {
+    return fp::partition(std::forward<decltype(r)>(r), pred);
+  };
+}
+template <class F> auto span(F pred) {
+  return [pred = std::move(pred)](auto &&r) {
+    return fp::span(std::forward<decltype(r)>(r), pred);
+  };
+}
+inline auto unique() {
+  return [](auto &&r) { return fp::unique(std::forward<decltype(r)>(r)); };
+}
+inline auto sort() {
+  return [](auto &&r) { return fp::sort(std::forward<decltype(r)>(r)); };
+}
+inline auto reverse() {
+  return [](auto &&r) {
+    using T = std::ranges::range_value_t<std::decay_t<decltype(r)>>;
+    std::vector<T> out(r.begin(), r.end());
+    std::reverse(out.begin(), out.end());
+    return out;
+  };
+}
+inline auto enumerate() {
+  return [](auto &&r) { return fp::enumerate(std::forward<decltype(r)>(r)); };
 }
 } // namespace fp

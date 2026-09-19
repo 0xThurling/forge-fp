@@ -5,9 +5,19 @@ return {
     standard = "20",
     install_headers = true
   },
-  testing = false,
+  build = {
+    -- Named flag bundles: warnings + threads (override per-run with
+    -- `forge build --preset simd` etc.).
+    presets = { "warnings", "concurrency" }
+  },
+  testing = true,
   dependencies = {
-   direct = {},
+   direct = {
+     ["googletest"] = {
+       git = "https://github.com/google/googletest.git",
+       tag = "v1.14.0"
+     }
+   },
    conan = {}
   },
   resources = {

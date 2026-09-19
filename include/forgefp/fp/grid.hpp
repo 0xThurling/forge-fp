@@ -11,8 +11,15 @@ auto map2d(std::vector<std::vector<T>> const &g, F f) {
   using R = std::invoke_result_t<F, T>;
   std::vector<std::vector<R>> out;
   out.reserve(g.size());
-  for (auto const &row : g)
-    out.push_back(fp::map(row, f));
+  // Self-contained: `grid.hpp` is included before the range helpers, so it
+  // cannot lean on `fp::map` here.
+  for (auto const &row : g) {
+    std::vector<R> mapped;
+    mapped.reserve(row.size());
+    for (auto const &x : row)
+      mapped.push_back(f(x));
+    out.push_back(std::move(mapped));
+  }
   return out;
 }
 
@@ -46,7 +53,9 @@ template <class F> void for_each_index(size_t rows, size_t cols, F f) {
       f(i, j);
 }
 
-template <class T, class F> std::vector<T> tabulate(size_t n, F f) {
+template <class F>
+auto tabulate(size_t n, F f) -> std::vector<std::invoke_result_t<F, size_t>> {
+  using T = std::invoke_result_t<F, size_t>;
   std::vector<T> out;
   out.reserve(n);
   for (size_t i = 0; i < n; ++i)
@@ -67,13 +76,19 @@ std::vector<std::pair<A, B>> cartesian_product(std::vector<A> const &as,
 
 template <class T, class F>
 auto map3d(std::vector<std::vector<std::vector<T>>> const &g, F f) {
-  std::vector<std::vector<std::vector<std::invoke_result_t<F, T>>>> out;
+  using R = std::invoke_result_t<F, T>;
+  std::vector<std::vector<std::vector<R>>> out;
   out.reserve(g.size());
   for (auto const &plane : g) {
-    std::vector<std::vector<std::invoke_result_t<F, T>>> p;
+    std::vector<std::vector<R>> p;
     p.reserve(plane.size());
-    for (auto const &row : plane)
-      p.push_back(fp::map(row, f));
+    for (auto const &row : plane) {
+      std::vector<R> mapped;
+      mapped.reserve(row.size());
+      for (auto const &x : row)
+        mapped.push_back(f(x));
+      p.push_back(std::move(mapped));
+    }
     out.push_back(std::move(p));
   }
   return out;

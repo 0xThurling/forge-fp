@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fp::str {
@@ -51,8 +52,47 @@ inline std::vector<std::string> split(std::string const &s, char delim) {
 inline std::vector<std::string> split(std::string const &s,
                                       std::string const &delim) {
   std::vector<std::string> out;
+  if (delim.empty()) {
+    out.push_back(s);
+    return out;
+  }
   size_t start = 0, pos;
   while ((pos = s.find(delim, start)) != std::string::npos) {
+    out.push_back(s.substr(start, pos - start));
+    start = pos + delim.size();
+  }
+  if (start < s.size())
+    out.push_back(s.substr(start));
+  return out;
+}
+
+// Non-owning split: the pieces are views into `s`. A trailing delimiter is
+// dropped, matching the owning `split`.
+inline std::vector<std::string_view> split_view(std::string_view s, char delim) {
+  std::vector<std::string_view> out;
+  if (s.empty())
+    return out;
+  size_t start = 0;
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == delim) {
+      out.push_back(s.substr(start, i - start));
+      start = i + 1;
+    }
+  }
+  if (start < s.size())
+    out.push_back(s.substr(start));
+  return out;
+}
+
+inline std::vector<std::string_view> split_view(std::string_view s,
+                                                std::string_view delim) {
+  std::vector<std::string_view> out;
+  if (delim.empty()) {
+    out.push_back(s);
+    return out;
+  }
+  size_t start = 0, pos;
+  while ((pos = s.find(delim, start)) != std::string_view::npos) {
     out.push_back(s.substr(start, pos - start));
     start = pos + delim.size();
   }
@@ -122,8 +162,8 @@ inline std::string pad_right(std::string s, size_t width, char c = ' ') {
   return s;
 }
 
-inline Result<int> to_int(std::string const &s) {
-  std::string t = trim(s);
+inline Result<int> to_int(std::string_view s) {
+  std::string t = trim(std::string(s));
   if (t.empty())
     return err<int>("not a number");
   try {
@@ -133,8 +173,8 @@ inline Result<int> to_int(std::string const &s) {
   }
 }
 
-inline Result<double> to_double(std::string const &s) {
-  std::string t = trim(s);
+inline Result<double> to_double(std::string_view s) {
+  std::string t = trim(std::string(s));
   if (t.empty())
     return err<double>("not a number");
   try {
@@ -180,15 +220,15 @@ inline std::string title(std::string s) {
 
 template <std::ranges::range R>
 std::string join(R const &parts, std::string const &sep) {
-  std::string out;
+  std::ostringstream os;
   bool first = true;
   for (auto const &p : parts) {
     if (!first)
-      out += sep;
-    out += p;
+      os << sep;
+    os << p;
     first = false;
   }
-  return out;
+  return os.str();
 }
 
 inline std::vector<std::string> chunk(std::string const &s, size_t n) {

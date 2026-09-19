@@ -20,6 +20,8 @@ global allocator.
 
 ```cpp
 class Arena {
+    static constexpr size_t alignment = 64;
+
     explicit Arena(size_t block_size = 64 * 1024);
     template <class T> T* alloc(size_t n = 1);          // aligned, uninitialized
     template <class T, class... Ts> T* make(Ts&&...);   // construct in place
@@ -29,6 +31,11 @@ class Arena {
 
 template <class F> auto with_arena(size_t block_size, F f);  // scoped arena
 ```
+
+Every block is allocated 64-byte aligned, and `alloc<T>` / `make<T>` honour the
+type's own alignment (up to 64; `static_assert`ed). When a block fills up the
+arena adds a new, larger block, so previously handed-out pointers are never
+invalidated — including across `reset()`, which simply rewinds the offsets.
 
 ## Usage
 

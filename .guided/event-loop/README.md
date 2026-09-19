@@ -19,7 +19,7 @@ Goal: `Actor<Msg, State>` wraps a state and a pure handler.
 
 int main() {
     fp::Actor<int, int> counter(0, [](int state, int msg) { return state + msg; });
-    for (int i = 0; i < 10; ++i) counter.Send(1);
+    for (int i = 0; i < 10; ++i) counter.send(1);
     while (counter.snapshot() < 10) std::this_thread::yield();
     std::cout << counter.snapshot() << "\n";   // 10
 }
@@ -36,7 +36,7 @@ is only ever touched by one thread at a time.
 Goal: request/response via `Ask` (returns a future of the new state).
 
 ```cpp
-auto fut = counter.Ask(5);
+auto fut = counter.ask(5);
 std::cout << fut.get() << "\n";   // 5
 ```
 
@@ -64,8 +64,8 @@ int main() {
             fp::case_<Deposit> ([&](auto d) { return balance + d.amount; }),
             fp::case_<Withdraw>([&](auto w) { return balance - w.amount; }));
     });
-    account.Send(Deposit{100});
-    std::cout << account.Ask(Withdraw{30}).get() << "\n";   // 70
+    account.send(Deposit{100});
+    std::cout << account.ask(Withdraw{30}).get() << "\n";   // 70
 }
 ```
 
@@ -105,7 +105,7 @@ Log logger({}, [](std::vector<std::string> log, std::string line) {
 
 Account account(0, [&](int balance, Message m) {
     int next = /* ... deposit/withdraw logic ... */;
-    logger.Send("balance is now " + std::to_string(next));   // side effect, at the edge
+    logger.send("balance is now " + std::to_string(next));   // side effect, at the edge
     return next;
 });
 ```
@@ -196,7 +196,7 @@ Goal: re-run a failing operation until it succeeds or runs out of attempts.
 
 ```cpp
 int attempts = 0;
-auto r = fp::retry<int>([&] {
+auto r = fp::retry([&] {
     ++attempts;
     return std::async(std::launch::async, [&] {
         return attempts >= 3 ? fp::ok(42) : fp::err<int>("again");

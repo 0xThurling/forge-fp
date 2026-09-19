@@ -13,7 +13,10 @@ template <class F, class... Bound> auto curry(F f, Bound... bound) {
   };
 }
 
-template <class F> decltype(auto) uncurry_step(F f) { return std::move(f); }
+// Terminal step: return the fully-applied value. Returning `decltype(auto)`
+// here would yield an rvalue reference to the local parameter (a dangling
+// reference at the call site), so return by value.
+template <class F> auto uncurry_step(F f) { return std::move(f); }
 
 template <class F, class T, class... Ts>
 decltype(auto) uncurry_step(F f, T t, Ts... ts) {

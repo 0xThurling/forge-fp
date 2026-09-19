@@ -2,23 +2,27 @@
 
 ## `map.hpp` — associative-container combinators
 
-Helpers for consuming and transforming `std::map<K, V>`. `vec.hpp`'s
-`group_by` produces an `unordered_map`; these let you consume one.
+Helpers for consuming and transforming associative containers. They are
+generic over the map type, so they work with both `std::map` and
+`std::unordered_map`. `group_by` produces an `unordered_map`; these let you
+consume one.
 
 ```cpp
 #include <fp/map.hpp>
 
 std::map<std::string, int> m = {{"a", 1}, {"b", 2}, {"c", 3}};
+std::unordered_map<std::string, int> u = {{"a", 1}};
 ```
 
 | Function | Result |
 |---|---|
 | `lookup(m, k)` | `optional<V>` — value or `nullopt` |
-| `map_values(m, f)` | new map with `f(v)` applied to each value |
+| `map_values(m, f)` | new map of the **same kind** with `f(v)` applied to each value |
 | `filter_values(m, pred)` | keep entries where `pred(v)` |
 | `merge_with(a, b, combine)` | union; `combine(a_v, b_v)` resolves collisions |
 | `keys(m)` / `values(m)` | `vector<K>` / `vector<V>` |
-| `to_map(vector<pair<K,V>>)` | build a map from pairs |
+| `to_map(vector<pair<K,V>>)` | build a `std::map` from pairs |
+| `to_unordered_map(vector<pair<K,V>>)` | build a `std::unordered_map` from pairs |
 
 ```cpp
 fp::lookup(m, std::string("b"));                       // optional{2}

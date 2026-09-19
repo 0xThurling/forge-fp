@@ -5,9 +5,10 @@
 
 ## What this module is about
 
-A parser is a function `std::string_view -> Result<pair<T, string_view>>`: it
-consumes some input and returns the parsed value *plus the leftover input*, or
-an error. Parser combinators let you build a grammar by *combining* small
+A parser is a function from `(input, offset)` to
+`Either<ParseError, pair<T, string_view>>`: it consumes some input and returns
+the parsed value *plus the leftover input*, or an error carrying the failing
+offset. Parser combinators let you build a grammar by *combining* small
 parsers, the way you build `Result`s with `and_then`. The two workhorses:
 
 - `map` — succeed where `p` succeeds, transforming the value.

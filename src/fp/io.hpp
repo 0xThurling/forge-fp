@@ -14,8 +14,10 @@ inline Result<std::string> read_file(std::string const &path) {
   if (!in)
     return err<std::string>("cannot open " + path);
 
-  std::string content((std::istream_iterator<char>(in)),
-                      std::istream_iterator<char>());
+  // istreambuf_iterator reads raw bytes; istream_iterator<char> would skip
+  // whitespace (including newlines).
+  std::string content((std::istreambuf_iterator<char>(in)),
+                      std::istreambuf_iterator<char>());
 
   if (in.bad())
     return err<std::string>("read failed: " + path);

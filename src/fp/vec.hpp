@@ -240,7 +240,8 @@ template <class T> T sum(std::vector<T> const &v) {
 }
 
 template <class T> T product(std::vector<T> const &v) {
-  return std::accumulate(v.begin(), v.end(), T{1});
+  return std::accumulate(v.begin(), v.end(), T{1},
+                         [](T a, T b) { return a * b; });
 }
 
 template <class T> std::optional<T> maximum(std::vector<T> const &v) {

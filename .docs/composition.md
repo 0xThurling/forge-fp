@@ -238,3 +238,11 @@ auto edit = fp::memoize2<int, int>([](int i, int j) { /* DP over (i, j) */ retur
 edit(3, 4);   // computed
 edit(3, 4);   // cached
 ```
+
+For **three or more arguments**, `memoizeN<Args...>` caches on the tuple:
+
+```cpp
+auto solve = fp::memoizeN<int, int, int>([](int a, int b, int c) { /* ... */ return a + b + c; });
+solve(1, 2, 3);   // computed
+solve(1, 2, 3);   // cached
+```

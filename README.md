@@ -95,22 +95,22 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `compose.hpp` | `compose`, `pipe`, `into`/`out`, `operator\|`, `tap` |
 | `concurrent.hpp` | `ThreadPool`, `par_map`/`par_for_each`/`par_reduce`, `Channel`, `RingBuffer`, `Actor`, `Async`, `async_map`/`async_sequence`, `race`/`timeout`/`retry` |
 | `curry.hpp` | `curry`, `uncurry` |
-| `either.hpp` | `Either<E, T>` (incl. `Either<E, void>`) + `map`/`and_then`/`or_else`/`map_error`/`flatten`/`bimap`/`swap`/`to_optional`/`rights`/`lefts`/`expect`/`ok_or`/`>>=` |
+| `either.hpp` | `Either<E, T>` (incl. `Either<E, void>`) + `map`/`and_then`/`or_else`/`map_error`/`flatten`/`bimap`/`swap`/`to_optional`/`rights`/`lefts`/`expect`/`ok_or`/`tap_err`/`tap_ok`/`>>=` |
 | `grid.hpp` | `map2d`/`map3d`, `transpose`, `flatten`, `for_each_index`, `tabulate`, `cartesian_product` |
 | `input.hpp` | `read_line`/`read_all`/`read_lines`/`read_char`/`read_chars`/`feed_lines`, POSIX `raw_mode`/`read_key` |
 | `io.hpp` | `read_file`, `read_lines`, `write_file` |
 | `macros.hpp` | `FP_TRY` *(opt-in)* |
-| `map.hpp` | `lookup`, `map_values`, `filter_values`, `merge_with`, `keys`, `values`, `to_map` |
+| `map.hpp` | `lookup`, `map_values`, `filter_values`, `merge_with`, `keys`, `values`, `to_map`, `to_unordered_map` (all generic over `std::map`/`std::unordered_map`) |
 | `maybe.hpp` | `std::optional` combinators: `map`/`and_then`/`or_else`/`filter`/`flatten`/`apply`/`collect`/`value_or_lazy`/`>>=` |
-| `memoize.hpp` | `memoize<Arg>(f)`, `memoize2<A,B>(f)` |
+| `memoize.hpp` | `memoize<Arg>(f)`, `memoize2<A,B>(f)`, `memoizeN<Args...>(f)` |
 | `ops.hpp` | named operators: `plus`/`minus`/`times`/`divide`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, `and_`/`or_`/`not_`, `negate`/`increment`/`decrement` |
-| `parse.hpp` | `Parser<T>` + primitives/sequencing/choice/lexemes, and operators (`>>`, `<<`, `\|`, `>>=`, `*`, `%`) |
-| `print.hpp` | `operator<<` for `Result`/`Either`/`Validation` *(opt-in)* |
-| `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/… |
+| `parse.hpp` | `Parser<T>` + primitives/sequencing/choice/lexemes (`eof`/`peek`/`not_followed`/`label`/`context`/`many1`/`chainl1`), position-carrying errors, operators (`>>`, `<<`, `\|`, `>>=`, `*`, `%`) |
+| `print.hpp` | `operator<<` for `Result`/`Either`/`Validation` |
+| `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/`take_while`/`drop_while`/`unique`/`sort`/`sort_by`/`partition`/`span` + curried stages for `into(…) \| …` pipelines |
 | `result.hpp` | `Result<T>` + `ok`/`err`, `sequence`/`traverse`/`transpose`/`try_`/`combine2`/`context`/`collect_all`/`unwrap`, `std::expected` bridge (C++23) |
 | `simd.hpp` | `vec<T>`, `map_inplace`/`map_to`/`map_inplace_fixed`, `reduce`/`dot`, `map_sqrt`/`map_exp`, `clamp_inplace`/`normalize`/`threshold_inplace`, `par_map_inplace` *(opt-in)* |
-| `stream.hpp` | `Stream<T>` (pull/push `map`/`filter`/`subscribe`) |
-| `string.hpp` | `fp::str`: `split`/`join`/`trim`/`to_lower`/`to_upper`/`to_int`/`to_double`/… |
+| `stream.hpp` | `Stream<T>` (pull/push `map`/`filter`/`subscribe`/`collect`/`take`/`take_while`/`scan`/`fold_left`/`concat`) |
+| `string.hpp` | `fp::str`: `split`/`split_view`/`join`/`trim`/`to_lower`/`to_upper`/`to_int`/`to_double`/… |
 | `validation.hpp` | `Validation<T>` + `valid`/`invalid`/`validate_all`/`combine`/`combine2`/`check`/`ensure`/`traverse`/`to_result` |
 | `vec.hpp` | `map`/`filter`/`zip`/`zip_with`/`group_by`/`partition`/`chunk`/`sort`/`sort_by`/`sum`/`product`/`scan`/`range`/… |
 
@@ -141,7 +141,7 @@ chain with no error branches.
   worked examples for every module.
 - **[`.practice/`](.practice/README.md)** — ~40 assertion-based exercises,
   one combinator at a time.
-- **[`.guided/`](.guided/README.md)** — 9 full projects built stage by stage,
+- **[`.guided/`](.guided/README.md)** — 10 full projects built stage by stage,
   from a CSV analyzer up to a rotating 3D shape in the terminal.
 
 ---

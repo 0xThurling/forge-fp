@@ -8,10 +8,13 @@ plus the *leftover* input, or an error.
 #include <fp/parse.hpp>
 ```
 
-`fp::Parser<T>` is a small struct wrapping
-`std::function<Result<std::pair<T, std::string_view>>(std::string_view)>` — it's
-callable, constructs implicitly from a matching lambda, and (because it's a real
-type) carries operators (`>>`, `<<`, `|`, `>>=`, `*`, `%`).
+`fp::Parser<T>` is a small struct wrapping a
+`std::function<PResult<T>(std::string_view, std::size_t)>`, where
+`PResult<T>` is `Either<ParseError, std::pair<T, std::string_view>>` and
+`ParseError` carries a `message` and the input `offset` where things went
+wrong. It's callable, constructs implicitly from a lambda taking
+`(std::string_view, std::size_t)`, and (because it's a real type) carries
+operators (`>>`, `<<`, `|`, `>>=`, `*`, `%`).
 
 ## The one idea
 
@@ -33,11 +36,15 @@ Everything else is *combining* these functions.
 | `satisfy(pred)` | one char where `pred(c)` is true |
 | `digit` / `letter` / `alnum` / `space` | character classes |
 | `one_of('a','b',…)` / `none_of(…)` | any / none of a set |
+| `eof` | end of input (consumes nothing) |
+| `peek(p)` | run `p` without consuming; succeed only if it matches |
+| `not_followed(p)` | negative lookahead: succeed iff `p` does **not** match |
 
 ```cpp
 fp::digit;                       // a Parser<char>
 fp::one_of('+', '-');            // '+' or '-'
 fp::satisfy([](char c) { return c >= 'A' && c <= 'Z'; });
+fp::not_followed(fp::digit) >> fp::letter;   // a letter that isn't a digit
 ```
 
 ## Sequencing
@@ -78,8 +85,11 @@ The same combinators have operator spellings (left = function form):
 
 ```cpp
 // "key: 42"  ->  int   (no lambdas, no captures)
+auto digits_to_int = [](std::vector<char> cs) {
+    return std::stoi(std::string(cs.begin(), cs.end()));
+};
 auto value_after = fp::lexeme(some(fp::letter)) >> fp::symbol(':')
-                 >> fp::lexeme(map(some(fp::digit), to_int));
+                 >> fp::lexeme(map(some(fp::digit), digits_to_int));
 
 // "a12"  or  "a345"   (choice, repetition)
 auto a_then_digits = fp::char_('a') >> *fp::digit;
@@ -101,15 +111,22 @@ auto member = key >>= [](std::string k) {
 
 | Function | Result |
 |---|---|
-| `many(p)` / `some(p)` | zero+ / one+ |
+| `many(p)` / `some(p)` / `many1(p)` | zero+ / one+ / one+ |
 | `sep_by(p, sep)` | one or more `p`, separated by `sep` |
 | `optional(p)` | zero or one (never fails) |
 | `alt(a, b)` / `choice(a, b, …)` | try each in order (backtracking) |
+| `chainl1(p, op)` | left-associative fold: `p (op p)*` |
 
 ```cpp
 fp::choice(fp::keyword("true"), fp::keyword("false"), fp::keyword("null"));
 
 fp::sep_by(fp::lexeme(fp::digit), fp::symbol(','));   // "1, 2, 3"
+
+// 1 + 2 + 3  ->  6   (`op` yields a binary callable)
+auto digit_int = fp::map(fp::lexeme(fp::digit), [](char c) { return c - '0'; });
+auto plus_op = fp::map(fp::symbol('+'),
+    [](char) { return std::function<int(int, int)>([](int a, int b) { return a + b; }); });
+auto expr = fp::chainl1(digit_int, plus_op);
 ```
 
 ## Whitespace-aware lexing
@@ -195,10 +212,19 @@ recursion — no cursor, no state machine.
 ## Errors
 
 `run(p, input)` returns `Result<T>` with the parser's message on failure, so
-parse errors compose with the rest of the library.
+parse errors compose with the rest of the library. Failures carry the input
+`offset` where they occurred; `run` renders it as a line/column location:
 
 ```cpp
-run(list, "1,,2");   // err("expected item after separator")
+run(list, "1,,2");   // err("line 1, col 3: expected item after separator")
+```
+
+Attach human context to the low-level failures with `label(p, "…")` (prefixes
+one parser's message) or `context(p, "…")` (names the construct being parsed):
+
+```cpp
+auto item = fp::label(fp::lexeme(fp::digit), "an integer");
+fp::run(item, "x");   // err("line 1, col 1: an integer")
 ```
 
 The primitives (`char_`/`string_`/`satisfy`) are all you need to define new

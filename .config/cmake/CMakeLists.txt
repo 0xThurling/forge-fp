@@ -6,6 +6,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
       
 
+include(FetchContent)
+
+# --- Dependencies ---
+FetchContent_Declare(googletest GIT_REPOSITORY "https://github.com/google/googletest.git" GIT_TAG "v1.14.0")
+FetchContent_MakeAvailable(googletest)
+
+
+# --- Build Flags ---
+find_package(Threads REQUIRED)
+link_libraries(Threads::Threads)
+add_compile_options("$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>")
+add_compile_options("$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wextra>")
+add_compile_options("$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wpedantic>")
+
+
 # --- Project Target ---
 file(GLOB_RECURSE SOURCES RELATIVE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src/*.cpp)
 if(SOURCES)
@@ -21,4 +36,23 @@ else()
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
 endif()
 
+
+
+# --- Testing ---
+enable_testing()
+file(GLOB_RECURSE TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/*.cpp")
+
+# Build list of sources WITHOUT src/main.cpp (to avoid multiple main)
+file(GLOB_RECURSE APP_SOURCES "${PROJECT_SOURCE_DIR}/src/*.cpp")
+list(FILTER APP_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
+
+add_executable(${PROJECT_NAME}_tests ${TEST_SOURCES} ${APP_SOURCES})
+target_include_directories(${PROJECT_NAME}_tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(${PROJECT_NAME}_tests PUBLIC GTest::gtest_main)
+include(GoogleTest)
+gtest_discover_tests(${PROJECT_NAME}_tests)
+       
 

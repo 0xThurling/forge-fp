@@ -197,3 +197,29 @@ fp::map(v, fp::times(2));                          // {2,4,6,8}
 
 The point-free form is worth it when the operation is common (`+1`, `>0`);
 for anything one-off, a lambda is clearer.
+
+## Point-free pipelines
+
+Every range combinator also has a *curried* form taking fewer arguments and
+returning `range -> range`, so you can build a pipeline with `into(…) | …` (see
+[Function composition](composition.md)); nothing runs until you `out(…)` it:
+
+```cpp
+auto r = fp::out(fp::into(v) | fp::filter(fp::gt(0))
+                            | fp::map(fp::times(2))
+                            | fp::take(2));
+```
+
+The available stages are `map`, `filter`, `filter_map`, `flat_map`,
+`take_while`, `drop_while`, `group_by`, `sort_by`, `partition`, `span`,
+`take(n)`, `drop(n)`, `chunk(n)`, `zip_with(other, f)`, `fold_left(init, op)`,
+`fold_right(init, op)`, `scan(init, op)`, and the zero-argument `unique()`,
+`sort()`, `reverse()`, `enumerate()`.
+
+`fp::partition`/`fp::span` split a sequence into a pair; the curried forms work
+the same way inside a pipe:
+
+```cpp
+auto [evens, odds] = fp::out(fp::into(v) | fp::partition([](int x) { return x % 2 == 0; }));
+auto [head, rest] = fp::out(fp::into(v) | fp::span(fp::lt(3)));
+```

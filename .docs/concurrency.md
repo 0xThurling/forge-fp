@@ -97,8 +97,8 @@ fp::Actor<int, long long> counter(
     0,                                     // initial state
     [](long long s, int m) { return s + m; });  // handler: State(State, Msg)
 
-counter.Send(1);                          // fire-and-forget
-auto fut = counter.Ask(10);               // request/response: future<State>
+counter.send(1);                          // fire-and-forget
+auto fut = counter.ask(10);               // request/response: future<State>
 long long total = counter.snapshot();     // read current state
 // destructor closes the mailbox and joins the worker thread
 ```
@@ -128,7 +128,7 @@ auto first = fp::race<int>(std::move(futs)).get();
 auto r = fp::timeout(fut, 100ms).get();
 
 // retry: re-run `make` until it succeeds or attempts run out
-auto r2 = fp::retry<int>(
+auto r2 = fp::retry(
     [&] { return std::async(std::launch::async, [] { return fp::ok(42); }); },
     5, 10ms).get();
 ```
@@ -172,6 +172,18 @@ from_ch.subscribe([&](int x) { /* ... */ });
 `subscribe`); `subscribe` runs the pipeline to completion. `Stream` is the
 *transform surface*: one `map`/`filter` vocabulary over any item source,
 synchronous or threaded.
+
+Beyond `map`/`filter`/`subscribe`, a `Stream` also supports `collect` (a.k.a.
+`to_vector`), `take(n)`, `take_while(pred)`, `scan(init, op)`,
+`fold_left(init, op)`, and `concat(other)` — all lazy except the
+materializing/folding ones:
+
+```cpp
+auto first_three = s.map([](int x) { return x * x; }).take(3).collect();
+int total2 = s.take_while([](int x) { return x < 4; })
+              .fold_left(0, std::plus<>{});
+fp::Stream<int> both = from_ch.concat(s);   // this stream, then `other`
+```
 
 ## Which tool for which job
 

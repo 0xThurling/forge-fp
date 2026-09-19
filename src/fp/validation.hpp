@@ -106,7 +106,7 @@ Validation<T> merge(Validation<T> const &a, Validation<T> const &b) {
   std::vector<std::string> errors;
   for (auto const *v : {&a, &b})
     if (!v->is_ok()) {
-      auto const &msgs = v->errors();
+      auto const &msgs = v->error();
       errors.insert(errors.end(), msgs.begin(), msgs.end());
     }
   return invalid<T>(std::move(errors));

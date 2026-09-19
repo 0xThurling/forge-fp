@@ -157,7 +157,7 @@ template <class T> void map_exp(std::vector<T> &v) {
 template <class T> void clamp_inplace(std::vector<T> &v, T lo, T hi) {
   using Vec = fp::vec<T>;
   map_inplace(v, [=](Vec x) {
-    return std::experimental::min(std::experimental::max(x, Vec(lo)));
+    return std::experimental::min(std::experimental::max(x, Vec(lo)), Vec(hi));
   });
 }
 
@@ -197,7 +197,9 @@ void threshold_inplace(std::vector<T> &v, T lo, T hi, T replace) {
   using Vec = fp::vec<T>;
   map_inplace(v, [=](Vec x) {
     auto mask = (x < Vec(lo)) || (x > Vec(hi));
-    return std::experimental::where(mask, Vec(replace), x);
+    // libstdc++ `where` yields a proxy; there is no 3-arg ternary select.
+    std::experimental::where(mask, x) = Vec(replace);
+    return x;
   });
 }
 

@@ -34,10 +34,13 @@ ForgeFP is a set of **small, pure functions** you compose. There is no class
 hierarchy and no inheritance — values flow through free functions:
 
 ```cpp
-auto result = fp::out(fp::into(names)
-    | [](auto v) { return fp::filter(v, fp::gt(2)); }   // keep short names
-    | [](auto v) { return fp::map(v, fp::str::to_upper); }
-    | fp::str::join(", "));
+std::vector<std::string> names = {"ada", "bob", "cy"};
+
+auto result = fp::pipeline(names,
+    fp::filter([](std::string const& s) { return s.size() > 2; }),  // curried stage
+    fp::map(fp::str::to_upper),                                    // curried stage
+    [](std::vector<std::string> const& v) { return fp::str::join(v, ", "); });
+// "ADA, BOB"
 ```
 
 Three recurring shapes dominate the library:

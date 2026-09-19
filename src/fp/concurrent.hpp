@@ -189,11 +189,11 @@ public:
       : mailbox_(mailbox_capacity), state_(std::move(initial)),
         handler_(std::move(h)), thr_([this] { loop(); }) {}
 
-  void Send(Msg m) {
+  void send(Msg m) {
     mailbox_.send(Item{std::move(m), std::nullopt});
   }
 
-  std::future<State> Ask(Msg m) {
+  std::future<State> ask(Msg m) {
     std::promise<State> p;
     auto fut = p.get_future();
     mailbox_.send(Item{std::move(m), std::move(p)});
@@ -254,7 +254,7 @@ AsyncResult<std::invoke_result_t<F, T>> async_map(AsyncResult<T> fut, F f) {
 
 template <class T>
 AsyncResult<std::vector<T>> async_sequence(std::vector<AsyncResult<T>> futs) {
-  return std::async(std::launch::async, [futs = std::move(futs)]() {
+  return std::async(std::launch::async, [futs = std::move(futs)]() mutable {
     std::vector<T> out;
     out.reserve(futs.size());
     for (auto &fut : futs) {
@@ -389,8 +389,11 @@ T par_reduce(ThreadPool &pool, std::vector<T> const &v, T init, F op) {
 
 template <class T> class Async {
 public:
+  using value_type = T;
+
+  // shared_future so an Async can be awaited from multiple continuations.
   Async(std::future<T> fut)
-      : shared_(std::make_shared<std::future<T>>(std::move(fut))) {}
+      : shared_(std::make_shared<std::shared_future<T>>(std::move(fut))) {}
 
   T get() const { return shared_->get(); }
 
@@ -413,7 +416,7 @@ public:
   }
 
 private:
-  std::shared_ptr<std::future<T>> shared_;
+  std::shared_ptr<std::shared_future<T>> shared_;
 };
 
 template <class T> AsyncResult<T> race(std::vector<AsyncResult<T>> futs) {
@@ -467,8 +470,11 @@ AsyncResult<T> timeout(AsyncResult<T> fut, std::chrono::milliseconds ms) {
   return result;
 }
 
-template <class T, class F>
-AsyncResult<T> retry(F make, size_t attempts, std::chrono::milliseconds delay) {
+// `make()` returns an AsyncResult<T>; T is deduced from it.
+template <class F>
+auto retry(F make, size_t attempts, std::chrono::milliseconds delay) {
+  using T = typename decltype(std::declval<std::invoke_result_t<F>>().get())
+      ::value_type;
   auto shared = std::make_shared<std::promise<Result<T>>>();
   std::future<Result<T>> result = shared->get_future();
   auto done = std::make_shared<std::atomic<bool>>(false);

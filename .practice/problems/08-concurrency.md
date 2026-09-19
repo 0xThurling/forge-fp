@@ -82,7 +82,7 @@ current state; `Ask` returns the post-message state as a future.
 
 ```cpp
 fp::Actor<int, int> counter(0, [](int s, int m){ return s + m; });
-for (int i = 0; i < 100; ++i) counter.Send(1);
+for (int i = 0; i < 100; ++i) counter.send(1);
 while (counter.snapshot() < 100) std::this_thread::yield();
 assert(counter.snapshot() == 100);
 ```
@@ -164,7 +164,7 @@ prod.join();
 
 ```cpp
 fp::Actor<int, int> counter(0, [](int s, int m){ return s + m; });
-for (int i = 0; i < 100; ++i) counter.Send(1);
+for (int i = 0; i < 100; ++i) counter.send(1);
 while (counter.snapshot() < 100) std::this_thread::yield();
 ```
 </details>

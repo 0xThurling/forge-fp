@@ -23,12 +23,11 @@ error from the enclosing function, otherwise it yields the value.
 
 ```cpp
 #include <fp/macros.hpp>
-using namespace fp;            // FP_TRY expands to unqualified `err`, so bring it in
 
-Result<int> parse_and_add(std::string const& a, std::string const& b) {
-    int x = FP_TRY(str::to_int(a));   // error -> return err(...) from parse_and_add
-    int y = FP_TRY(str::to_int(b));
-    return ok(x + y);
+fp::Result<int> parse_and_add(std::string const& a, std::string const& b) {
+    int x = FP_TRY(fp::str::to_int(a));   // error -> return err(...) from parse_and_add
+    int y = FP_TRY(fp::str::to_int(b));
+    return fp::ok(x + y);
 }
 ```
 
@@ -48,12 +47,14 @@ one block *per fallible step* — `FP_TRY` collapses each block to one line.
 
 - GCC/Clang: a statement expression `({ ... })`. MSVC: an immediately-invoked
   lambda. Both are behind `#if defined(_MSC_VER)`.
-- The value type is deduced with `std::remove_cvref_t`, so `FP_TRY` works for
-  move-only `T` (e.g. `std::unique_ptr`) and moves out of the temporary.
-- `FP_TRY` expands to an unqualified `err<...>(...)`, so it must be used inside
-  `namespace fp` or after `using namespace fp;` / `using fp::err;`.
+- On failure the macro returns a small error *propagator* that converts to
+  whatever the enclosing function returns — `Result<T>` or `Validation<T>` —
+  so `FP_TRY` composes with either error style.
+- `FP_TRY` also accepts a `Result<void>` step: `FP_TRY(step());` propagates the
+  error without binding a value.
+- Everything is `fp::`-qualified, so no `using namespace fp;` is needed.
 - Use it only where a `return` is valid (inside a function returning
-  `Result<T>`, where `T` matches the extracted value).
+  `Result<T>` / `Validation<T>`).
 
 ## When *not* to use it
 

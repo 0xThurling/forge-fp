@@ -136,7 +136,7 @@ std::vector<E> lefts(std::vector<Either<E, T>> const &es) {
 
 template <class E, class T, class F, class G>
 auto bimap(Either<E, T> const &e, F on_err, G on_ok)
-    -> Either<std::invoke_result<F, E>, std::invoke_result_t<G, T>> {
+    -> Either<std::invoke_result_t<F, E>, std::invoke_result_t<G, T>> {
   using E2 = std::invoke_result_t<F, E>;
   using T2 = std::invoke_result_t<G, T>;
   if (e.is_ok())
@@ -161,6 +161,27 @@ T const &expect(Either<E, T> const &e, char const *msg) {
 template <class E, class T>
 Either<E, T> ok_or(std::optional<T> const &o, E error) {
   return o ? Either<E, T>::ok(*o) : Either<E, T>::err(std::move(error));
+}
+
+// Side-effecting taps: run `f` on the held side (if any), return `e` unchanged.
+template <class E, class T, class F>
+Either<E, T> tap_err(Either<E, T> e, F f) {
+  if (!e.is_ok())
+    f(e.error());
+  return e;
+}
+
+template <class E, class T, class F>
+Either<E, T> tap_ok(Either<E, T> e, F f) {
+  if (e.is_ok())
+    f(e.value());
+  return e;
+}
+
+template <class E, class F> Either<E, void> tap_ok(Either<E, void> e, F f) {
+  if (e.is_ok())
+    f();
+  return e;
 }
 
 template <class E, class T, class F>
