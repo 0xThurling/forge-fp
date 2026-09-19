@@ -55,7 +55,10 @@ auto visitor = fp::overload{
 std::visit(visitor, s);
 ```
 
-## `match` for `std::optional` and `Result`
+## `match` for `std::optional` and the Either family
+
+The variant `match` above is constrained to `std::variant`s; the ADTs get their
+own overloads (arm order: success arm first, failure arm second).
 
 ```cpp
 // optional: some(T) / none()
@@ -63,10 +66,13 @@ std::string s = fp::match(std::optional<int>{3},
     [](int x) { return "got " + std::to_string(x); },
     []       { return std::string("nothing"); });
 
-// Result: ok_f(T) / err_f(std::string)
+// Result / Either / Validation: ok_f(T) / err_f(error)
 auto msg = fp::match(fp::err<int>("boom"),
     [](int x)              { return "ok"; },
     [](std::string const&) { return "failed"; });
+
+// Result<void>: the ok arm takes no arguments
+auto n = fp::match(fp::ok<void>(), [] { return 1; }, [](std::string const&) { return 0; });
 ```
 
 ## `cond` / `when` / `otherwise` — ordered guards
@@ -104,8 +110,8 @@ fp::map(fp::zip(as, bs), add);
 |---|---|
 | `match(variant, case_<T>(f)...)` | exhaustive, O(1) dispatch |
 | `match(optional, some, none)` | optionals |
-| `match(result, ok_f, err_f)` | results |
+| `match(either, ok_f, err_f)` | `Result` / `Either` / `Validation` (incl. `void`) |
 | `cond(v, when(p,f)..., otherwise(f))` | ordered, first-match guards |
 | `overload{...}` | build a visitor by hand |
 | `unpack(f)` | call `f(a, b)` on a pair |
-| `value_or(opt, fallback)` | default an optional |
+| `value_or(opt, fallback)` / `value_or(result, fallback)` | default an optional/result |

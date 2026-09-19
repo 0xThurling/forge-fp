@@ -138,6 +138,18 @@ Full `Either` surface (all free functions in `fp`):
 - `expect(e, "msg")` — value or throw `std::runtime_error` (returns `T const&`).
 - `ok_or(opt, err)` — `std::optional<T>` → `Either<E,T>`.
 - `operator>>=` — `e >>= f` is `and_then(e, f)`.
+- `operator==` / `operator!=` — compare two `Either`s (ok==ok when values match,
+  err==err when errors match).
+- `operator bool` (explicit) — `if (e)` means `if (e.is_ok())`.
+- `value_or(e, fallback)` — the value, or `fallback` on error.
+- `match(e, ok_f, err_f)` — see [Pattern matching](pattern-matching.md).
+
+```cpp
+fp::ok(3) == fp::ok(3);          // true
+fp::ok(3) != fp::err<int>("x");  // true
+if (fp::ok(1)) { /* succeeded */ }
+fp::value_or(fp::err<int>("x"), 0);   // 0
+```
 
 ### `Either<E, void>`
 
@@ -165,6 +177,16 @@ err_val.error();          // "division by zero"
 
 Construction helpers: `fp::ok(v)`, `fp::ok<T>()` (for `Result<void>`), and
 `fp::err<T>("message")`.
+
+`fp::fail("message")` is a *shortcut* that converts to any `Result<T>` (or
+`Validation<T>`), so you don't have to name `T`:
+
+```cpp
+fp::Result<Person> parse(std::string const& line) {
+    if (bad) return fp::fail("expected 'name,age'");   // no <Person>!
+    return fp::ok(Person{...});
+}
+```
 
 Everything from `Either` applies (it's an alias), plus these `Result`-specific
 combinators:

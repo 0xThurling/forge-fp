@@ -20,6 +20,7 @@ opt-in `simd.hpp` and `macros.hpp`.
 | [Parsing](parsing.md) | `parse.hpp` | parser combinators |
 | [File I/O](io.md) | `io.hpp` | `read_file` / `read_lines` / `write_file` |
 | [Input](input.md) | `input.hpp` | reading stdin/streams as `Result`/`Stream`/`Channel` |
+| [Printing](print.md) | `print.hpp` | `operator<<` for the ADTs |
 | [Concurrency](concurrency.md) | `concurrent.hpp`, `stream.hpp` | thread pool, channels, actors, futures, `Stream` |
 | [Memory](memory.md) | `arena.hpp` | the bump allocator |
 | [SIMD](simd.md) | `simd.hpp` | vectorized `map`/`reduce`/`dot`/math |
@@ -74,3 +75,4 @@ Three recurring shapes dominate the library:
 | `concurrent.hpp` | `fp` | no |
 | `simd.hpp` | `fp` | yes — `#include` it explicitly (not in `all.hpp`) |
 | `macros.hpp` | (macros) | yes — `#include` it explicitly (not in `all.hpp`) |
+| `print.hpp` | `fp` | yes — `#include` it explicitly (not in `all.hpp`) |

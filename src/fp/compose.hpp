@@ -44,4 +44,17 @@ template <class F> auto tap(F side_effect) {
     return std::forward<decltype(x)>(x);
   };
 }
+
+namespace detail {
+template <class T> T pipeline_impl(Piped<T> p) { return out(std::move(p)); }
+template <class T, class F, class... Fs>
+auto pipeline_impl(Piped<T> p, F f, Fs... fs) {
+  return pipeline_impl(p | std::move(f), std::move(fs)...);
+}
+} // namespace detail
+
+// `pipeline(x, f, g, h)` == `out(into(x) | f | g | h)`.
+template <class T, class... Fs> auto pipeline(T x, Fs... fs) {
+  return detail::pipeline_impl(into(std::move(x)), std::move(fs)...);
+}
 } // namespace fp

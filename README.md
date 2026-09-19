@@ -102,9 +102,10 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `macros.hpp` | `FP_TRY` *(opt-in)* |
 | `map.hpp` | `lookup`, `map_values`, `filter_values`, `merge_with`, `keys`, `values`, `to_map` |
 | `maybe.hpp` | `std::optional` combinators: `map`/`and_then`/`or_else`/`filter`/`flatten`/`apply`/`collect`/`value_or_lazy`/`>>=` |
-| `memoize.hpp` | `memoize<Arg>(f)` |
+| `memoize.hpp` | `memoize<Arg>(f)`, `memoize2<A,B>(f)` |
 | `ops.hpp` | named operators: `plus`/`minus`/`times`/`divide`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, `and_`/`or_`/`not_`, `negate`/`increment`/`decrement` |
-| `parse.hpp` | `Parser<T>` + `char_`/`string_`/`many`/`some`/`sep_by`/`optional`/`map`/`and_then`/`alt`/`run` |
+| `parse.hpp` | `Parser<T>` + primitives/sequencing/choice/lexemes, and operators (`>>`, `<<`, `\|`, `>>=`, `*`, `%`) |
+| `print.hpp` | `operator<<` for `Result`/`Either`/`Validation` *(opt-in)* |
 | `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/… |
 | `result.hpp` | `Result<T>` + `ok`/`err`, `sequence`/`traverse`/`transpose`/`try_`/`combine2`/`context`/`collect_all`/`unwrap`, `std::expected` bridge (C++23) |
 | `simd.hpp` | `vec<T>`, `map_inplace`/`map_to`/`map_inplace_fixed`, `reduce`/`dot`, `map_sqrt`/`map_exp`, `clamp_inplace`/`normalize`/`threshold_inplace`, `par_map_inplace` *(opt-in)* |

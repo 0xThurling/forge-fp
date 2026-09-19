@@ -6,10 +6,12 @@ plus the *leftover* input, or an error.
 
 ```cpp
 #include <fp/parse.hpp>
-
-template <class T>
-using Parser = std::function<Result<std::pair<T, std::string_view>>(std::string_view)>;
 ```
+
+`fp::Parser<T>` is a small struct wrapping
+`std::function<Result<std::pair<T, std::string_view>>(std::string_view)>` — it's
+callable, constructs implicitly from a matching lambda, and (because it's a real
+type) carries operators (`>>`, `<<`, `|`, `>>=`, `*`, `%`).
 
 ## The one idea
 
@@ -60,6 +62,40 @@ fp::run(pair, "width: 42");   // ok({"width", {'4','2'}})
 `and_then` is the one you reach for when the next step *depends on* the value
 (the parser analogue of `>>=`); `seq`/`preceded`/`terminated` cover the common
 "parse this, then that" cases without a lambda.
+
+## Operators
+
+The same combinators have operator spellings (left = function form):
+
+| Operator | Function | Meaning |
+|---|---|---|
+| `a >> b` | `preceded(a, b)` | parse `a` then `b`, keep **b** |
+| `a << b` | `terminated(a, b)` | parse `a` then `b`, keep **a** |
+| `a \| b` | `alt(a, b)` | try `a`, else `b` |
+| `a >>= f` | `and_then(a, f)` | parse `a`, then run `f(value)` (bind) |
+| `*p` | `many(p)` | zero or more |
+| `p % sep` | `sep_by(p, sep)` | one or more `p`, separated by `sep` |
+
+```cpp
+// "key: 42"  ->  int   (no lambdas, no captures)
+auto value_after = fp::lexeme(some(fp::letter)) >> fp::symbol(':')
+                 >> fp::lexeme(map(some(fp::digit), to_int));
+
+// "a12"  or  "a345"   (choice, repetition)
+auto a_then_digits = fp::char_('a') >> *fp::digit;
+
+// [1, 2, 3]  — note % binds tighter than >> / <<
+auto array = fp::symbol('[') >> (fp::lexeme(fp::digit) % fp::symbol(',')) << fp::symbol(']');
+```
+
+`>>=` has the usual bind semantics; `succeed(value)` is a parser that yields a
+value without consuming (useful as the last step of a bind):
+
+```cpp
+auto member = key >>= [](std::string k) {
+    return symbol(':') >> number >>= [k](int n) { return succeed(std::pair{k, n}); };
+};
+```
 
 ## Repetition and choice
 
@@ -139,12 +175,10 @@ int main() {
     auto jnum   = map(json_number, [](double d) { return Json{d}; });
 
     Parser<Json> value;                                   // recursion
-    auto jarray = map(between(symbol('['), symbol(']'),
-                              sep_by(ref(value), symbol(','))),
+    auto jarray = map(symbol('[') >> ref(value) % symbol(',') << symbol(']'),
                       [](Json::Array xs) { return Json{xs}; });
-    auto member = seq(json_string, preceded(symbol(':'), ref(value)));  // pair<string,Json>
-    auto jobject = map(between(symbol('{'), symbol('}'),
-                               sep_by(member, symbol(','))),
+    auto member = seq(json_string, symbol(':') >> ref(value));  // pair<string,Json>
+    auto jobject = map(symbol('{') >> member % symbol(',') << symbol('}'),
                        [](Json::Object ps) { return Json{ps}; });
 
     value = preceded(whitespace(), choice(jnull, jtrue, jfalse,

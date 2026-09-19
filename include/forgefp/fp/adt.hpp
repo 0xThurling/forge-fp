@@ -2,6 +2,7 @@
 #include "forgefp/fp/result.hpp"
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -11,7 +12,17 @@ template <class... Fs> struct overload : Fs... {
 };
 template <class... Fs> overload(Fs...) -> overload<Fs...>;
 
-template <class Variant, class... Fs> auto match(Variant &&v, Fs... fs) {
+namespace detail {
+template <class> struct is_variant : std::false_type {};
+template <class... Ts> struct is_variant<std::variant<Ts...>> : std::true_type {};
+template <class T>
+inline constexpr bool is_variant_v = is_variant<std::remove_cvref_t<T>>::value;
+} // namespace detail
+
+// Dispatch a std::variant to a set of arms (exhaustive, compiler-checked).
+template <class Variant, class... Fs>
+  requires detail::is_variant_v<Variant>
+auto match(Variant &&v, Fs... fs) {
   return std::visit(overload{fs...}, std::forward<Variant>(v));
 }
 
@@ -51,13 +62,25 @@ auto match(std::optional<T> const &o, F some, G none) {
   return o ? some(*o) : none();
 }
 
-template <class T, class F, class G>
-auto match(Result<T> const &r, F ok_f, G err_f) {
-  return r.is_ok() ? ok_f(r.value()) : err_f(r.error());
+// Either / Result / Validation
+template <class E, class T, class F, class G>
+auto match(Either<E, T> const &e, F ok_f, G err_f) {
+  return e.is_ok() ? ok_f(e.value()) : err_f(e.error());
+}
+
+// Either<E, void> / Result<void>
+template <class E, class F, class G>
+auto match(Either<E, void> const &e, F ok_f, G err_f) {
+  return e.is_ok() ? ok_f() : err_f(e.error());
 }
 
 template <class T> T value_or(std::optional<T> const &o, T fallback) {
   return o.value_or(std::move(fallback));
+}
+
+template <class E, class T>
+T value_or(Either<E, T> const &e, T fallback) {
+  return e.is_ok() ? e.value() : std::move(fallback);
 }
 
 template <class F> auto unpack(F f) {

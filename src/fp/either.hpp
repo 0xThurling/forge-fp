@@ -2,6 +2,7 @@
 #include "compose.hpp"
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -18,6 +19,9 @@ template <class E, class T> struct Either {
   T &value() { return std::get<1>(v); }
   T const &value() const { return std::get<1>(v); }
   E const &error() const { return std::get<0>(v); }
+
+  bool operator==(Either const &) const = default;
+  explicit operator bool() const { return is_ok(); }
 
   static Either ok(T t) {
     return Either{std::variant<E, T>(std::in_place_index<1>, std::move(t))};
@@ -37,6 +41,9 @@ template <class E> struct Either<E, void> {
   bool is_ok() const { return v.index() == 1; }
   E const &error() const { return std::get<0>(v); }
 
+  bool operator==(Either const &) const = default;
+  explicit operator bool() const { return is_ok(); }
+
   static Either ok() {
     return Either{
         std::variant<E, std::monostate>(std::in_place_index<1>)};
@@ -47,6 +54,20 @@ template <class E> struct Either<E, void> {
         std::variant<E, std::monostate>(std::in_place_index<0>, std::move(e))};
   }
 };
+
+// A failure value that converts to any Result<T> / Validation<T>, so you can
+// write `return fp::fail("why");` without naming T.
+struct Failure {
+  std::string msg;
+  template <class T> operator Either<std::string, T>() const {
+    return Either<std::string, T>::err(msg);
+  }
+  template <class T> operator Either<std::vector<std::string>, T>() const {
+    return Either<std::vector<std::string>, T>::err(
+        std::vector<std::string>{msg});
+  }
+};
+inline Failure fail(std::string msg) { return {std::move(msg)}; }
 
 template <class E, class T, class F>
 auto map(Either<E, T> const &e, F f) -> Either<E, std::invoke_result_t<F, T>> {

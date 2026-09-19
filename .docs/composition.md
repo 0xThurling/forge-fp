@@ -74,8 +74,36 @@ std::optional<int> o = fp::out(fp::into(std::optional<int>{3}) | fp::plus(1));  
 ```
 
 The one thing to remember: a `vector` is **not** a wrapper here — `into(v) | f`
-still applies `f` to the whole vector (use `fp::map` for element-wise mapping).
-This keeps the pipe's "plain value" behavior backward-compatible.
+still applies `f` to the whole vector. To map/filter *elements* in a pipe, use
+the **curried** collection combinators (below) or `fp::map`.
+
+### `pipeline(x, f, g, h)`
+
+The pipe needs `into`/`out` around it; `pipeline` wraps the whole thing:
+
+```cpp
+fp::pipeline(3, [](int x){ return x*x; }, fp::increment);   // 10 — same as out(into(3) | ...)
+fp::pipeline(fp::ok(21), fp::times(2));                       // ok(42) — type-directed as usual
+```
+
+### Curried collection combinators (point-free pipes)
+
+`map(f)`, `filter(pred)`, `take(n)`, `drop(n)`, `fold_left(init, op)`,
+`scan(init, op)`, `sort_by(key)` — each returns a *function* `range -> range`,
+so element-wise transforms work inside the pipe:
+
+```cpp
+auto result = fp::pipeline(v,
+    fp::filter(fp::gt(2)),        // keep x > 2
+    fp::map(fp::plus(1)),         // add 1
+    fp::take(5));                 // first five
+
+// equivalent, with the raw pipe:
+fp::out(fp::into(v) | fp::filter(fp::gt(2)) | fp::map(fp::plus(1)) | fp::take(5));
+```
+
+These are the same names as the eager forms, distinguished by arity
+(`filter(v, pred)` has two args; `filter(pred)` returns the stage).
 
 ## `curry` and `uncurry`
 
@@ -200,4 +228,13 @@ to memoize a recursion — combine with `fix` manually:
 auto fib = fp::memoize<int>(fp::fix([](auto recur, int n) -> long long {
     return n < 2 ? n : recur(n - 1) + recur(n - 2);
 }));
+```
+
+For **two arguments**, use `memoize2` (it caches on the pair, with a built-in
+hash):
+
+```cpp
+auto edit = fp::memoize2<int, int>([](int i, int j) { /* DP over (i, j) */ return 0; });
+edit(3, 4);   // computed
+edit(3, 4);   // cached
 ```

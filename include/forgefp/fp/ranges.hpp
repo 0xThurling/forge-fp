@@ -220,4 +220,42 @@ std::optional<std::ranges::range_value_t<R>> maximum(R &&r) {
     return std::nullopt;
   return *std::ranges::max_element(r);
 }
+
+// --- curried (pipe-friendly) forms ----------------------------------------
+// Enable point-free collection pipelines:
+//   fp::out(fp::into(v) | fp::filter(fp::gt(0)) | fp::map(fp::plus(1)));
+// Each takes fewer args than the eager form and returns `range -> range`.
+
+template <class F> auto map(F f) {
+  return [f = std::move(f)](auto &&r) {
+    return fp::map(std::forward<decltype(r)>(r), f);
+  };
+}
+template <class F> auto filter(F pred) {
+  return [pred = std::move(pred)](auto &&r) {
+    return fp::filter(std::forward<decltype(r)>(r), pred);
+  };
+}
+template <class N> auto take(N n) {
+  return [n](auto &&r) { return fp::take(std::forward<decltype(r)>(r), n); };
+}
+template <class N> auto drop(N n) {
+  return [n](auto &&r) { return fp::drop(std::forward<decltype(r)>(r), n); };
+}
+template <class T, class F> auto fold_left(T init, F op) {
+  return [init = std::move(init), op = std::move(op)](auto &&r) mutable {
+    return fp::fold_left(std::forward<decltype(r)>(r), std::move(init), op);
+  };
+}
+template <class T, class F> auto scan(T init, F op) {
+  return [init = std::move(init), op = std::move(op)](auto &&r) mutable {
+    return fp::scan(std::forward<decltype(r)>(r), std::move(init), op);
+  };
+}
+template <class F> auto sort_by(F key_fn) {
+  return [key_fn = std::move(key_fn)](auto &&r) {
+    using T = std::ranges::range_value_t<std::decay_t<decltype(r)>>;
+    return fp::sort_by(std::vector<T>(r.begin(), r.end()), key_fn);
+  };
+}
 } // namespace fp

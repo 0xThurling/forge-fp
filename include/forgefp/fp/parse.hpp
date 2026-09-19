@@ -5,15 +5,32 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace fp {
 
-template <class T>
-using Parser =
-    std::function<Result<std::pair<T, std::string_view>>(std::string_view)>;
+// A parser: `string_view -> Result<(value, leftover)>`. A distinct type (not a
+// bare `std::function`) so it can carry operators (`>>`, `<<`, `|`, `>>=`,
+// `*`, `%`). Constructs implicitly from any matching callable, and callable like
+// a function.
+template <class T> struct Parser {
+  using value_type = T;
+  using result_type = Result<std::pair<T, std::string_view>>;
+
+  std::function<result_type(std::string_view)> fn;
+
+  Parser() = default;
+
+  template <class F>
+    requires(!std::is_same_v<std::remove_cvref_t<F>, Parser>) &&
+            std::is_invocable_r_v<result_type, F &, std::string_view>
+  Parser(F &&f) : fn(std::forward<F>(f)) {}
+
+  result_type operator()(std::string_view s) const { return fn(s); }
+};
 
 inline Parser<char> char_(char c) {
   return [c](std::string_view s) -> Result<std::pair<char, std::string_view>> {
@@ -217,6 +234,45 @@ Parser<A> choice(Parser<A> a, Parser<A> b, Rest... rest) {
 // --- recursion: defer a parser reference to parse time ---
 template <class T> Parser<T> ref(Parser<T> &p) {
   return [&p](std::string_view s) { return p(s); };
+}
+
+// --- always succeeds with `value`, consuming nothing (for `>>=`) ---
+template <class T> Parser<T> succeed(T value) {
+  return [value](std::string_view s) -> Result<std::pair<T, std::string_view>> {
+    return ok(std::pair<T, std::string_view>{value, s});
+  };
+}
+
+// --- operators -------------------------------------------------------------
+// a >> b   : parse a then b, keep b
+// a << b   : parse a then b, keep a
+// a | b    : try a, else b (choice)
+// a >>= f  : parse a, then run the parser `f(value)` (bind)
+// *p       : zero or more p
+// p % sep  : one or more p separated by sep (sep_by)
+
+template <class A, class B>
+Parser<B> operator>>(Parser<A> a, Parser<B> b) {
+  return preceded(std::move(a), std::move(b));
+}
+template <class A, class B>
+Parser<A> operator<<(Parser<A> a, Parser<B> b) {
+  return terminated(std::move(a), std::move(b));
+}
+template <class A> Parser<A> operator|(Parser<A> a, Parser<A> b) {
+  return alt(std::move(a), std::move(b));
+}
+template <class A, class F>
+auto operator>>=(Parser<A> a, F f)
+    -> Parser<typename std::invoke_result_t<F, A>::value_type> {
+  return and_then(std::move(a), std::move(f));
+}
+template <class T> Parser<std::vector<T>> operator*(Parser<T> p) {
+  return many(std::move(p));
+}
+template <class T, class D>
+Parser<std::vector<T>> operator%(Parser<T> p, Parser<D> sep) {
+  return sep_by(std::move(p), std::move(sep));
 }
 
 template <class T> Result<T> run(Parser<T> p, std::string_view s) {
