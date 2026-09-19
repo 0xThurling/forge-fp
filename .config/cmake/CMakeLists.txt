@@ -19,6 +19,7 @@ link_libraries(Threads::Threads)
 add_compile_options("$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>")
 add_compile_options("$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wextra>")
 add_compile_options("$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wpedantic>")
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/W4>")
 
 
 # --- Project Target ---

@@ -144,6 +144,71 @@ b.get();
 Unlike `std::future`, `Async` is copyable (shared state), so one result can fan
 out to many continuations.
 
+## Cancellation — `Task<T>` and `std::stop_token`
+
+`Task<T>` is a cancellable `AsyncResult<T>`: a `shared_future<Result<T>>` plus
+a shared `std::stop_source`. Cancellation is **cooperative** — `cancel()`
+requests a stop, and producers/continuations check it at their boundaries; a
+task already running uncooperative code is not preempted.
+
+```cpp
+#include <fp/task.hpp>
+
+// The callable may take a leading std::stop_token to poll while running.
+fp::Task<int> t = fp::async_task([](std::stop_token stop) {
+    while (!stop.stop_requested()) { /* work */ }
+    return fp::cancelled<int>();
+});
+
+t.cancel();          // request a stop (shared across the whole chain)
+t.cancelled();       // true
+t.get();             // err("cancelled") once the body observes it
+```
+
+Everything in a chain shares one stop source, and continuations are skipped
+once it is stopped:
+
+```cpp
+auto sum = fp::async_task([] { return 10; })
+    .then([](int x) { return x + 5; })          // skipped if cancelled
+    .and_then([](int x) { return fp::async_task([x] { return x * 2; }); });
+sum.get();   // ok(30)
+
+auto recovered = fp::async_task([]() -> fp::Result<int> { return fp::err<int>("x"); })
+    .recover([](std::string const&) { return 0; });
+```
+
+Producers:
+
+| Producer | Returns |
+|---|---|
+| `fp::async_task(f)` / `fp::async_task(token, f)` | `Task<T>` on a fresh thread |
+| `pool.enqueue(token, f, args…)` | `Task<T>`; stopped tasks are skipped |
+| `fp::spawn(pool, [token,] f, args…)` | sugar for the above |
+| `fp::cancel_after(ms)` | a `std::stop_source` that stops after `ms` |
+
+Cancellable bulk operations check the token at every loop boundary and resolve
+to `err("cancelled")` if it fires: `par_map`/`par_for_each`/`par_reduce` (token
+overloads), `race` (cancels the losers), `timeout` (cancels the source),
+`retry(token, make, attempts, delay)` (interruptible backoff; `make` receives
+the token).
+
+```cpp
+using namespace std::chrono_literals;
+auto src = fp::cancel_after(250ms);
+auto r = fp::race({
+    fp::async_task([] { return 1; }),
+    fp::async_task([] { std::this_thread::sleep_for(1s); return 2; }),
+}).get();                                  // ok(1), loser cancelled
+
+auto tr = fp::timeout(fp::async_task([] { /* slow */ return 0; }), 100ms).get();
+// err("timeout"), source cancelled
+```
+
+`Task` does **not** auto-cancel on destruction — call `cancel()` explicitly.
+For plain (non-cancellable) futures, `Async<T>`/`AsyncResult<T>` remain as
+before.
+
 ## `Stream<T>` — transform a sequence of items
 
 Transport-agnostic: build from a pull source (`std::function<optional<T>()>`)
@@ -194,4 +259,5 @@ fp::Stream<int> both = from_ch.concat(s);   // this stream, then `other`
 | Realtime, lock-free single-producer/single-consumer | `RingBuffer<T>` |
 | Stateful worker with a mailbox | `Actor<Msg, State>` |
 | Compose async `Result`s | `async_map` / `async_sequence` / `race` / `timeout` / `retry` |
+| Cancel long-running or composed async work | `Task<T>` + `std::stop_token` (`spawn` / `async_task` / `cancel_after`) |
 | Lazy transformation of a sequence (sync or async) | `Stream<T>` |

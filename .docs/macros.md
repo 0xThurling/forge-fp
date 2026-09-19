@@ -1,8 +1,9 @@
 # Macros — `macros.hpp`
 
-ForgeFP is macro-free by design, with **one** opt-in exception: `FP_TRY`. It's
-the only thing the type system and expressions cannot express (early `return`
-from the enclosing function).
+ForgeFP is macro-free by design, with **one** opt-in exception: the `FP_TRY`
+family (`FP_TRY`, `FP_TRY_VALUE`, `FP_TRY_VOID`). They do the one thing the
+type system and expressions cannot express: early `return` from the enclosing
+function.
 
 **Opt-in**: `macros.hpp` is *not* in `all.hpp` — include it explicitly.
 
@@ -43,18 +44,44 @@ int x = r.value();
 
 one block *per fallible step* — `FP_TRY` collapses each block to one line.
 
+## `FP_TRY_VALUE` / `FP_TRY_VOID` — the portable forms
+
+`FP_TRY` is an expression, which needs GCC/Clang *statement expressions*. For
+code that must compile everywhere (including MSVC), use the statement forms —
+they share the same error-propagation semantics:
+
+```cpp
+fp::Result<int> parse_and_add(std::string const& a, std::string const& b) {
+    FP_TRY_VALUE(x, fp::str::to_int(a));   // declares `x`, or returns the error
+    FP_TRY_VALUE(y, fp::str::to_int(b));
+    return fp::ok(x + y);
+}
+
+fp::Result<int> step() {
+    FP_TRY_VOID(open_connection());        // propagate a Result<void> failure
+    return fp::ok(0);
+}
+```
+
+| Form | Context | Value |
+|---|---|---|
+| `FP_TRY(expr)` | expression (`int x = FP_TRY(…)`) | value or propagate — GCC/Clang only |
+| `FP_TRY_VALUE(name, expr)` | statement | declares `name` with the value, or propagates |
+| `FP_TRY_VOID(expr)` | statement | discards the value, propagates failures |
+
 ## Implementation notes
 
-- GCC/Clang: a statement expression `({ ... })`. MSVC: an immediately-invoked
-  lambda. Both are behind `#if defined(_MSC_VER)`.
+- `FP_TRY` is a statement expression `({ ... })` on GCC/Clang. On MSVC, using it
+  produces a diagnostic pointing at `FP_TRY_VALUE`/`FP_TRY_VOID`.
+- `FP_TRY_VALUE`/`FP_TRY_VOID` are ordinary statement macros and work on every
+  compiler.
 - On failure the macro returns a small error *propagator* that converts to
-  whatever the enclosing function returns — `Result<T>` or `Validation<T>` —
-  so `FP_TRY` composes with either error style.
-- `FP_TRY` also accepts a `Result<void>` step: `FP_TRY(step());` propagates the
-  error without binding a value.
+  whatever the enclosing function returns — `Result<T>`, `Validation<T>`, or
+  `Outcome<T>` — so the macros compose with any error style.
+- The statement forms cover `Result<void>` steps through `FP_TRY_VOID`.
 - Everything is `fp::`-qualified, so no `using namespace fp;` is needed.
-- Use it only where a `return` is valid (inside a function returning
-  `Result<T>` / `Validation<T>`).
+- Use them only where a `return` is valid (inside a function returning
+  `Result<T>` / `Validation<T>` / `Outcome<T>`).
 
 ## When *not* to use it
 

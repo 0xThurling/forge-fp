@@ -93,9 +93,10 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `arena.hpp` | `Arena` bump allocator + `with_arena` |
 | `combinators.hpp` | `identity`, `const_`, `flip`, `on`, `compose`, `fix`, `apply`, `when`/`unless`, `first`/`second`, `pipe_with` |
 | `compose.hpp` | `compose`, `pipe`, `into`/`out`, `operator\|`, `tap` |
-| `concurrent.hpp` | `ThreadPool`, `par_map`/`par_for_each`/`par_reduce`, `Channel`, `RingBuffer`, `Actor`, `Async`, `async_map`/`async_sequence`, `race`/`timeout`/`retry` |
+| `concurrent.hpp` | `ThreadPool`, `par_map`/`par_for_each`/`par_reduce`, `Channel`, `RingBuffer`, `Actor`, `Async`, `async_map`/`async_sequence`, `race`/`timeout`/`retry`, cancellable overloads + `spawn`/`async_task` |
 | `curry.hpp` | `curry`, `uncurry` |
 | `either.hpp` | `Either<E, T>` (incl. `Either<E, void>`) + `map`/`and_then`/`or_else`/`map_error`/`flatten`/`bimap`/`swap`/`to_optional`/`rights`/`lefts`/`expect`/`ok_or`/`tap_err`/`tap_ok`/`>>=` |
+| `error.hpp` | `Error` (code + message + cause chain + `source_location`), `Outcome<T>` = `Either<Error,T>`, `error`/`with_context`/`root_cause`/`to_string`, `to_result`/`from_result`, `fp::errc::*` |
 | `grid.hpp` | `map2d`/`map3d`, `transpose`, `flatten`, `for_each_index`, `tabulate`, `cartesian_product` |
 | `input.hpp` | `read_line`/`read_all`/`read_lines`/`read_char`/`read_chars`/`feed_lines`, POSIX `raw_mode`/`read_key` |
 | `io.hpp` | `read_file`, `read_lines`, `write_file` |
@@ -109,10 +110,12 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/`take_while`/`drop_while`/`unique`/`sort`/`sort_by`/`partition`/`span` + curried stages for `into(…) \| …` pipelines |
 | `result.hpp` | `Result<T>` + `ok`/`err`, `sequence`/`traverse`/`transpose`/`try_`/`combine2`/`context`/`collect_all`/`unwrap`, `std::expected` bridge (C++23) |
 | `simd.hpp` | `vec<T>`, `map_inplace`/`map_to`/`map_inplace_fixed`, `reduce`/`dot`, `map_sqrt`/`map_exp`, `clamp_inplace`/`normalize`/`threshold_inplace`, `par_map_inplace` *(opt-in)* |
+| `task.hpp` | `Task<T>` (cancellable `AsyncResult`): `cancel`/`token`/`then`/`and_then`/`recover`/`join`, `std::stop_token` helpers (`cancel_after`, `cancelled`) |
 | `stream.hpp` | `Stream<T>` (pull/push `map`/`filter`/`subscribe`/`collect`/`take`/`take_while`/`scan`/`fold_left`/`concat`) |
 | `string.hpp` | `fp::str`: `split`/`split_view`/`join`/`trim`/`to_lower`/`to_upper`/`to_int`/`to_double`/… |
 | `validation.hpp` | `Validation<T>` + `valid`/`invalid`/`validate_all`/`combine`/`combine2`/`check`/`ensure`/`traverse`/`to_result` |
 | `vec.hpp` | `map`/`filter`/`zip`/`zip_with`/`group_by`/`partition`/`chunk`/`sort`/`sort_by`/`sum`/`product`/`scan`/`range`/… |
+| `views.hpp` | lazy `fp::views::` adaptors: `map`/`filter`/`take`/`drop`/`take_while`/`drop_while`/`reverse`/`join`/`filter_map`/`flat_map`/`enumerate`/`zip` |
 
 ---
 
@@ -150,7 +153,8 @@ chain with no error branches.
 
 - **Header-only, no ABI** — everything is templates or `inline`.
 - **Opt-ins** — `simd.hpp` and `macros.hpp` are *not* in `all.hpp`; include
-  them explicitly.
+  them explicitly. `simd.hpp` requires `<experimental/simd>` (GCC/Clang); the
+  `FP_TRY_VALUE`/`FP_TRY_VOID` macros are portable.
 - **Threads** — `concurrent.hpp` needs `-pthread`.
 - **`memoize`** is not thread-safe.
 - **`Either` accessors** (`value()`/`error()`) assume the right alternative is

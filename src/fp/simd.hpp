@@ -1,4 +1,11 @@
 #pragma once
+// std::experimental::simd is a GCC/Clang library extension; MSVC does not ship
+// it. Gate the whole header so portable code can feature-test with
+// `__has_include(<experimental/simd>)` and skip it.
+#if !__has_include(<experimental/simd>)
+#error "fp/simd.hpp requires <experimental/simd> (GCC/Clang); use scalar fp:: instead"
+#else
+
 #include "fp/concurrent.hpp"
 #include <chrono>
 #include <cstddef>
@@ -212,3 +219,5 @@ std::vector<T> gather(std::vector<T> const &v, std::vector<size_t> const &idx) {
   return out;
 }
 } // namespace fp
+
+#endif // __has_include(<experimental/simd>)

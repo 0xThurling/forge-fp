@@ -14,14 +14,15 @@ opt-in `simd.hpp` and `macros.hpp`.
 |---|---|---|
 | [Getting started](getting-started.md) | `fp/all.hpp` | building, including, first program, conventions |
 | [ADTs: `Either` / `Result` / `Maybe` / `Validation`](adts.md) | `either.hpp`, `result.hpp`, `maybe.hpp`, `validation.hpp` | the four error/optionality types and their combinators |
-| [Collections](collections.md) | `vec.hpp`, `ranges.hpp` | `map`/`filter`/`fold`/`zip`/… over vectors and ranges |
+| [Structured errors](adts.md#outcomet--structured-errors-with-codes-and-context) | `error.hpp` | `Error` / `Outcome<T>`: codes, context chains, source locations |
+| [Collections](collections.md) | `vec.hpp`, `ranges.hpp`, `views.hpp` | `map`/`filter`/`fold`/`zip`/… over vectors and ranges, lazy `fp::views` |
 | [Maps & grids](maps-grids.md) | `map.hpp`, `grid.hpp` | associative-container helpers, 2D/3D grids |
 | [Strings](strings.md) | `string.hpp` | `split`/`join`/`trim`/parsing/… in `fp::str` |
 | [Parsing](parsing.md) | `parse.hpp` | parser combinators |
 | [File I/O](io.md) | `io.hpp` | `read_file` / `read_lines` / `write_file` |
 | [Input](input.md) | `input.hpp` | reading stdin/streams as `Result`/`Stream`/`Channel` |
 | [Printing](print.md) | `print.hpp` | `operator<<` for the ADTs |
-| [Concurrency](concurrency.md) | `concurrent.hpp`, `stream.hpp` | thread pool, channels, actors, futures, `Stream` |
+| [Concurrency](concurrency.md) | `concurrent.hpp`, `task.hpp`, `stream.hpp` | thread pool, channels, actors, futures, cancellation, `Stream` |
 | [Memory](memory.md) | `arena.hpp` | the bump allocator |
 | [SIMD](simd.md) | `simd.hpp` | vectorized `map`/`reduce`/`dot`/math |
 | [Function composition](composition.md) | `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp` | pipes, currying, named operators |

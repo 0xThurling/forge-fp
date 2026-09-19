@@ -124,6 +124,9 @@ also fail.
   [Function composition](composition.md).
 - `simd.hpp` and `macros.hpp` are opt-in (not in `all.hpp`): include them
   explicitly.
+- `simd.hpp` requires `<experimental/simd>` (GCC/Clang). For portable early
+  returns, `macros.hpp` offers `FP_TRY_VALUE`/`FP_TRY_VOID` on every compiler —
+  see [Macros](macros.md).
 
 ## Reading the API
 

@@ -1,3 +1,4 @@
+#if __has_include(<experimental/simd>)
 #include <fp/simd.hpp>
 
 #include <gtest/gtest.h>
@@ -80,3 +81,5 @@ TEST(Simd, ParMapInplace) {
   fp::par_map_inplace(pool, v, [](fp::vec<int> x) { return x * fp::vec<int>(2); });
   EXPECT_EQ(v[999], 1998);
 }
+
+#endif // __has_include(<experimental/simd>)

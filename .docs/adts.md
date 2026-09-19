@@ -330,6 +330,72 @@ auto vn = fp::validate_none(std::vector<int>{1,2,3}, [](int x){ return x < 0; },
 fp::Result<int> rr = fp::to_result(good);
 ```
 
+## `Outcome<T>` — structured errors with codes and context
+
+`Result<T>` errors are strings: perfect for messages, awkward when callers need
+to branch on *what* failed or attach a call chain. `Outcome<T>` is the
+`Either<fp::Error, T>` counterpart — same combinators, richer error value.
+
+```cpp
+#include <fp/error.hpp>
+
+struct fp::Error {
+    std::error_code code;              // std::errc::* or a custom category
+    std::string message;
+    std::vector<Error> causes;         // outermost-first context chain
+    std::source_location where;        // where this error was created
+};
+```
+
+`fp::error("...")` captures the call site; the error code is optional:
+
+```cpp
+fp::Outcome<int> read_port(std::string const& path) {
+    auto text = fp::read_file(path);
+    if (!text.is_ok())
+        return fp::error(text.error(), fp::errc::not_found);
+    return fp::Outcome<int>::ok(fp::str::to_int(text.value()).value_or_lazy(8080));
+}
+```
+
+Common codes live in `fp::errc` (`cancelled`, `timeout`, `invalid`,
+`not_found`), but any `std::error_code` works alongside a custom category.
+
+**Context chains.** `with_context` wraps an existing failure, preserving its
+code and pushing it under a new message:
+
+```cpp
+auto o = fp::with_context(read_port("server.conf"), "loading config");
+// o.error().message   == "loading config"
+// o.error().code      == fp::errc::not_found
+// o.error().causes[0] == the original Error
+fp::to_string(o.error());               // "loading config: no such file..."
+fp::root_cause(o.error()).message;      // "no such file..."
+```
+
+**Bridges.** `to_result` flattens the chain into one string for string-based
+APIs; `from_result` goes the other way:
+
+```cpp
+fp::Result<int>  r  = fp::to_result(o);             // err("loading config: ...")
+fp::Outcome<int> o2 = fp::from_result(r, fp::errc::invalid);
+```
+
+Everything else is shared with `Either`: `map`/`and_then`/`or_else`/`bimap`/
+`tap_err`, `match`, `fp::fail`, and `FP_TRY` (a failed `Result` or `Outcome`
+propagates into an `Outcome`-returning function), plus `operator<<`.
+
+```cpp
+fp::Outcome<int> parse_and_add(std::string const& a, std::string const& b) {
+    int x = FP_TRY(fp::str::to_int(a));
+    int y = FP_TRY(fp::str::to_int(b));
+    return fp::Outcome<int>::ok(x + y);
+}
+```
+
+Use `Result` by default; reach for `Outcome` when callers need error codes,
+context chains, or source locations.
+
 ## Chaining it all together
 
 ```cpp

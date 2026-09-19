@@ -11,12 +11,14 @@
 #include <optional>
 #include <queue>
 #include <stdexcept>
+#include <stop_token>
 #include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "result.hpp"
+#include "task.hpp"
 
 namespace fp {
 template <class T, class F>
@@ -276,6 +278,7 @@ public:
   }
 
   template <class F, class... Ts>
+    requires(!std::is_same_v<std::decay_t<F>, std::stop_token>)
   auto enqueue(F &&f, Ts &&...ts) -> std::future<std::invoke_result_t<F, Ts...>> {
     using R = std::invoke_result_t<F, Ts...>;
     auto task = std::make_shared<std::packaged_task<R()>>(
@@ -290,6 +293,48 @@ public:
     }
     cv_.notify_one();
     return fut;
+  }
+
+  // Cancellable enqueue: a task whose token is stopped before it runs never
+  // executes and resolves to `err("cancelled")`. The returned Task shares its
+  // cancellation with `tok`. Callables may take a leading `std::stop_token` to
+  // observe cancellation while running.
+  template <class F, class... Ts>
+  auto enqueue(std::stop_token tok, F &&f, Ts &&...ts)
+      -> Task<detail::task_value_t<detail::producer_result_t<F, Ts...>>> {
+    using R = detail::producer_result_t<F, Ts...>;
+    using V = detail::task_value_t<R>;
+
+    auto src = std::make_shared<std::stop_source>();
+    auto stopper = [src] { src->request_stop(); };
+    std::shared_ptr<std::stop_callback<decltype(stopper)>> bridge;
+    if (tok.stop_possible())
+      bridge =
+          std::make_shared<std::stop_callback<decltype(stopper)>>(tok, stopper);
+
+    auto task = std::make_shared<std::packaged_task<Result<V>()>>(
+        [src, bridge, f = std::forward<F>(f),
+         ... ts = std::forward<Ts>(ts)]() mutable -> Result<V> {
+          if (src->stop_requested())
+            return cancelled<V>();
+          if constexpr (std::is_void_v<R>) {
+            detail::call_producer(f, src->get_token(), std::move(ts)...);
+            return ok<void>();
+          } else {
+            return detail::as_result(
+                detail::call_producer(f, src->get_token(), std::move(ts)...));
+          }
+        });
+
+    auto fut = task->get_future().share();
+    {
+      std::lock_guard lock(mu_);
+      if (stop_)
+        throw std::runtime_error("enqueue on stopped ThreadPool");
+      tasks_.emplace([task] { (*task)(); });
+    }
+    cv_.notify_one();
+    return Task<V>(std::move(fut), std::move(src));
   }
 
   size_t size() const { return workers_.size(); }
@@ -387,6 +432,135 @@ T par_reduce(ThreadPool &pool, std::vector<T> const &v, T init, F op) {
   return acc;
 }
 
+// --- cancellable variants -------------------------------------------------
+// The token is observed at every loop boundary; if it stops, the partial work
+// is discarded and the call resolves to `err("cancelled")`. Running callables
+// are never preempted, only skipped.
+
+template <class T, class F>
+auto par_map(ThreadPool &pool, std::stop_token tok, std::vector<T> const &v,
+             F f) -> Result<std::vector<std::invoke_result_t<F, T>>> {
+  using R = std::invoke_result_t<F, T>;
+  std::vector<R> out(v.size());
+  size_t n = v.size();
+  if (n == 0)
+    return ok(std::move(out));
+  size_t threads = std::max<size_t>(1, pool.size());
+  size_t chunk = (n + threads - 1) / threads;
+  std::vector<std::future<void>> futs;
+  futs.reserve((n + chunk - 1) / chunk);
+  for (size_t s = 0; s < n; s += chunk) {
+    size_t e = std::min(n, s + chunk);
+    futs.push_back(pool.enqueue([&v, &out, f, s, e, tok] {
+      for (size_t i = s; i < e && !tok.stop_requested(); ++i)
+        out[i] = f(v[i]);
+    }));
+  }
+  for (auto &fut : futs)
+    fut.get();
+  if (tok.stop_requested())
+    return cancelled<std::vector<R>>();
+  return ok(std::move(out));
+}
+
+template <class T, class F>
+Result<void> par_for_each(ThreadPool &pool, std::stop_token tok,
+                          std::vector<T> const &v, F f) {
+  size_t n = v.size();
+  size_t threads = std::max<size_t>(1, pool.size());
+  size_t chunk = (n + threads - 1) / threads;
+  std::vector<std::future<void>> futs;
+  futs.reserve((n + chunk - 1) / chunk);
+  for (size_t s = 0; s < n; s += chunk) {
+    size_t e = std::min(n, s + chunk);
+    futs.push_back(pool.enqueue([&v, f, s, e, tok] {
+      for (size_t i = s; i < e && !tok.stop_requested(); ++i)
+        f(v[i]);
+    }));
+  }
+  for (auto &fut : futs)
+    fut.get();
+  if (tok.stop_requested())
+    return cancelled<void>();
+  return ok<void>();
+}
+
+template <class T, class F>
+Result<T> par_reduce(ThreadPool &pool, std::stop_token tok,
+                     std::vector<T> const &v, T init, F op) {
+  size_t n = v.size();
+  if (n == 0)
+    return ok(std::move(init));
+  size_t threads = std::min(pool.size(), n);
+  size_t slice = (n + threads - 1) / threads;
+  std::vector<std::future<T>> futs;
+  for (size_t s = 0; s < n; s += slice) {
+    size_t e = std::min(n, s + slice);
+    futs.push_back(pool.enqueue([&v, &op, s, e, tok] {
+      T acc = v[s];
+      for (size_t i = s + 1; i < e && !tok.stop_requested(); ++i)
+        acc = op(acc, v[i]);
+      return acc;
+    }));
+  }
+  T acc = std::move(init);
+  for (auto &fut : futs)
+    acc = op(acc, fut.get());
+  if (tok.stop_requested())
+    return cancelled<T>();
+  return ok(std::move(acc));
+}
+
+// Sugar over the cancellable enqueue.
+template <class F, class... Ts>
+auto spawn(ThreadPool &pool, std::stop_token tok, F &&f, Ts &&...ts)
+    -> Task<detail::task_value_t<detail::producer_result_t<F, Ts...>>> {
+  return pool.enqueue(tok, std::forward<F>(f), std::forward<Ts>(ts)...);
+}
+
+template <class F, class... Ts>
+  requires(!std::is_same_v<std::decay_t<F>, std::stop_token>)
+auto spawn(ThreadPool &pool, F &&f, Ts &&...ts)
+    -> Task<detail::task_value_t<detail::producer_result_t<F, Ts...>>> {
+  return pool.enqueue(std::stop_token{}, std::forward<F>(f),
+                      std::forward<Ts>(ts)...);
+}
+
+// Cancellable std::async. The callable may take a leading `std::stop_token`.
+template <class F>
+auto async_task(std::stop_token tok, F f)
+    -> Task<detail::task_value_t<detail::producer_result_t<F>>> {
+  using R = detail::producer_result_t<F>;
+  using V = detail::task_value_t<R>;
+
+  auto src = std::make_shared<std::stop_source>();
+  auto stopper = [src] { src->request_stop(); };
+  std::shared_ptr<std::stop_callback<decltype(stopper)>> bridge;
+  if (tok.stop_possible())
+    bridge =
+        std::make_shared<std::stop_callback<decltype(stopper)>>(tok, stopper);
+
+  auto fut =
+      std::async(std::launch::async,
+                 [f = std::move(f), src, bridge]() mutable -> Result<V> {
+                   if (src->stop_requested())
+                     return cancelled<V>();
+                   if constexpr (std::is_void_v<R>) {
+                     detail::call_producer(f, src->get_token());
+                     return ok<void>();
+                   } else {
+                     return detail::as_result(
+                         detail::call_producer(f, src->get_token()));
+                   }
+                 })
+          .share();
+  return Task<V>(std::move(fut), std::move(src));
+}
+
+template <class F> auto async_task(F f) {
+  return async_task(std::stop_token{}, std::move(f));
+}
+
 template <class T> class Async {
 public:
   using value_type = T;
@@ -470,7 +644,9 @@ AsyncResult<T> timeout(AsyncResult<T> fut, std::chrono::milliseconds ms) {
   return result;
 }
 
-// `make()` returns an AsyncResult<T>; T is deduced from it.
+// --- cancellable variants (Task-based) ------------------------------------
+
+// `make()` (no arguments) returns an AsyncResult<T>; T is deduced from it.
 template <class F>
 auto retry(F make, size_t attempts, std::chrono::milliseconds delay) {
   using T = typename decltype(std::declval<std::invoke_result_t<F>>().get())
@@ -501,5 +677,99 @@ auto retry(F make, size_t attempts, std::chrono::milliseconds delay) {
     }
   }).detach();
   return result;
+}
+
+// First task to finish wins; the rest are cancelled.
+template <class T> Task<T> race(std::vector<Task<T>> tasks) {
+  auto src = std::make_shared<std::stop_source>();
+  auto shared = std::make_shared<std::vector<Task<T>>>(std::move(tasks));
+
+  if (shared->empty()) {
+    return Task<T>(
+        std::async(std::launch::async, [] { return err<T>("race: no tasks"); })
+            .share(),
+        src);
+  }
+
+  auto promise = std::make_shared<std::promise<Result<T>>>();
+  auto result = promise->get_future();
+  auto done = std::make_shared<std::atomic<bool>>(false);
+
+  auto stopper = [shared] {
+    for (auto &t : *shared)
+      t.cancel();
+  };
+  auto bridge = std::make_shared<std::stop_callback<decltype(stopper)>>(
+      src->get_token(), stopper);
+
+  for (auto &t : *shared) {
+    std::thread([t, promise, done, shared, bridge]() mutable {
+      Result<T> r = t.get();
+      if (done->exchange(true))
+        return;
+      for (auto &x : *shared)
+        x.cancel();
+      try {
+        promise->set_value(std::move(r));
+      } catch (std::future_error const &) {
+      }
+    }).detach();
+  }
+  return Task<T>(result.share(), std::move(src));
+}
+
+// Value, or `err("timeout")` after the deadline — cancelling the source.
+template <class T>
+Task<T> timeout(Task<T> t, std::chrono::milliseconds ms) {
+  auto src = t.source();
+  return Task<T>(
+      std::async(std::launch::async,
+                 [t, ms]() mutable -> Result<T> {
+                   if (t.wait_for(ms) == std::future_status::ready)
+                     return t.get();
+                   t.cancel();
+                   return err<T>("timeout");
+                 })
+          .share(),
+      std::move(src));
+}
+
+// `make(std::stop_token)` returns an AsyncResult<T>; T is deduced from it.
+template <class F>
+auto retry(std::stop_token tok, F make, size_t attempts,
+           std::chrono::milliseconds delay) {
+  using T = typename decltype(
+      std::declval<std::invoke_result_t<F, std::stop_token>>().get())
+      ::value_type;
+  auto src = std::make_shared<std::stop_source>();
+  auto stopper = [src] { src->request_stop(); };
+  std::shared_ptr<std::stop_callback<decltype(stopper)>> bridge;
+  if (tok.stop_possible())
+    bridge =
+        std::make_shared<std::stop_callback<decltype(stopper)>>(tok, stopper);
+
+  auto fut = std::async(std::launch::async,
+                        [make, attempts, delay, src, bridge]() mutable
+                            -> Result<T> {
+                          for (size_t i = 0; i < attempts; ++i) {
+                            if (src->stop_requested())
+                              return cancelled<T>();
+                            Result<T> r = make(src->get_token()).get();
+                            if (r.is_ok())
+                              return r;
+                            if (i + 1 == attempts)
+                              break;
+                            std::mutex m;
+                            std::unique_lock lk(m);
+                            std::condition_variable_any cv;
+                            cv.wait_for(lk, src->get_token(), delay,
+                                        [] { return false; });
+                          }
+                          if (src->stop_requested())
+                            return cancelled<T>();
+                          return err<T>("retry exhausted");
+                        })
+                 .share();
+  return Task<T>(std::move(fut), std::move(src));
 }
 } // namespace fp

@@ -1,11 +1,29 @@
 #pragma once
-#include "either.hpp"
+#include "error.hpp"
 #include <cstddef>
 #include <ostream>
 #include <string>
 #include <vector>
 
 namespace fp {
+
+// Error / Outcome<T>
+inline std::ostream &operator<<(std::ostream &os, Error const &e) {
+  return os << to_string(e);
+}
+
+template <class T>
+std::ostream &operator<<(std::ostream &os, Either<Error, T> const &o) {
+  if (o.is_ok())
+    return os << "ok(" << o.value() << ")";
+  return os << "err(" << o.error() << ")";
+}
+
+inline std::ostream &operator<<(std::ostream &os, Either<Error, void> const &o) {
+  if (o.is_ok())
+    return os << "ok()";
+  return os << "err(" << o.error() << ")";
+}
 
 // Either<E, T> / Result<T>
 template <class E, class T>

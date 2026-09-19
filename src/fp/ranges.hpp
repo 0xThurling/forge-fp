@@ -111,12 +111,11 @@ size_t count(R &&r, T const &v) {
 template <std::ranges::range R> auto to_vector(R &&r) {
   using T = std::ranges::range_value_t<R>;
   std::vector<T> out;
-  if constexpr (std::ranges::sized_range<R>) {
+  if constexpr (std::ranges::sized_range<R>)
     out.reserve(std::ranges::size(r));
-    for (auto &&x : r)
-      out.push_back(std::forward<decltype(x)>(x));
-    return out;
-  }
+  for (auto &&x : r)
+    out.push_back(std::forward<decltype(x)>(x));
+  return out;
 }
 
 template <std::ranges::range R, class F> auto flat_map(R &&r, F f) {

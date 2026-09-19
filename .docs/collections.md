@@ -223,3 +223,52 @@ the same way inside a pipe:
 auto [evens, odds] = fp::out(fp::into(v) | fp::partition([](int x) { return x % 2 == 0; }));
 auto [head, rest] = fp::out(fp::into(v) | fp::span(fp::lt(3)));
 ```
+
+## Lazy views (`fp::views`)
+
+The `fp::` combinators are **eager** — each stage builds a `std::vector`. When
+you want a lazy pipeline (no allocation, single pass, composable with
+`std::views`), use `fp::views::` — thin wrappers over the standard view
+adaptors:
+
+```cpp
+#include <fp/views.hpp>
+
+std::vector<int> v = {1, 2, 3, 4, 5, 6};
+
+auto r = v | fp::views::filter([](int x) { return x % 2 == 0; })
+           | fp::views::map([](int x) { return x * 10; });
+fp::to_vector(r);    // {20, 40, 60} — nothing ran until here
+```
+
+| `fp::views::` | Notes |
+|---|---|
+| `map(f)`, `filter(p)`, `take(n)`, `drop(n)` | std adaptors; work with `\|` |
+| `take_while(p)`, `drop_while(p)` | prefix adaptors |
+| `reverse`, `join` | std adaptors |
+| `filter_map(f)` | `f` returns `optional`; present values kept |
+| `flat_map(f)` | map to a range, then flatten |
+| `enumerate(r)` / `enumerate()` | index + element (random-access ranges) |
+| `zip(a, b)` / `zip(b)` | truncating pair-ups (random-access ranges) |
+
+Views are **lazy and borrowing**:
+
+- nothing runs until you iterate, `fp::to_vector`, or fold;
+- a view must not outlive the range it borrows. Passing an rvalue (or using the
+  `fp::into(x) | …` pipe, which moves) makes the pipeline own its data;
+- operations that fundamentally need all elements first — `sort`, `sort_by`,
+  `partition`, `span`, `chunk`, `windows`, `group_by` — stay eager in `fp::`.
+
+```cpp
+// infinite source, finite pipeline
+auto squares = std::views::iota(1)
+             | fp::views::map([](int x) { return x * x; })
+             | fp::views::take(5);
+fp::to_vector(squares);   // {1, 4, 9, 16, 25}
+
+// heterogeneous zip (different iterator types are fine)
+fp::views::zip(std::vector<int>{1, 2}, std::vector<std::string>{"a", "b"});
+```
+
+Rule of thumb: reach for `fp::` when you want a materialized result, and
+`fp::views::` when you want to compose passes without intermediates.
