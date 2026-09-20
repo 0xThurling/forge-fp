@@ -32,19 +32,16 @@ template <class F, class G, class... Fs> auto compose(F f, G g, Fs... fs) {
   };
 }
 
-template <class F> auto fix(F f) {
-  return [f = std::move(f)](auto &&...args) -> decltype(auto) {
-    auto impl = [&f](auto &&impl, auto &&...inner) -> decltype(auto) {
-      auto recur = [&impl](auto &&...next) -> decltype(auto) {
-        return impl(impl, std::forward<decltype(next)>(next)...);
-      };
+template <class F> struct Fixer {
+  F f;
 
-      return std::invoke(f, recur, std::forward<decltype(inner)>(inner)...);
-    };
+  template <class... Args>
+  decltype(auto) operator()(Args &&...args) const {
+    return f(*this, std::forward<Args>(args)...);
+  }
+};
 
-    return impl(impl, std::forward<decltype(args)>(args)...);
-  };
-}
+template <class F> auto fix(F f) { return Fixer<F>{std::move(f)}; }
 
 template <class F, class... Ts>
 auto apply(F f, Ts... ts) -> std::invoke_result_t<F, Ts...> {
