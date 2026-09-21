@@ -66,12 +66,18 @@ in both header trees, with tests; the zero-cost claims are backed by
 ## Next: GPU (SYCL)
 
 The fourth execution tier — opt-in SYCL kernels with a CPU fallback — has its
-own plan in [`GPU.md`](GPU.md). Phases 0 and 1 are landed (`gpu.hpp`:
-detection, `usable()`, USM `Buffer<T>` device + shared, `nd_range` elementwise
-kernels, `axpy_inplace`, `softmax_rows`, chunked device `reduce`/`dot`). The
-fallback path runs in the gtest suite and the SYCL path is compiled and
-exercised on CPU by the stub harness
-(`scripts/run_gpu_stub_test.sh`).
+own plan in [`GPU.md`](GPU.md). Phases 0–3 are landed (`gpu.hpp`: detection,
+`usable()`, USM `Buffer<T>` device + shared, pinned `HostBuffer<T>` staging,
+`nd_range` elementwise kernels, `axpy_inplace`, `softmax_rows` and its
+work-group variant, row/column kernels, chunked `reduce`/`dot` with a reusable
+`Scratch<T>`, and tiled `matmul`/`batched_matmul`). The fallback path runs in
+the gtest suite and the SYCL path is compiled and exercised on CPU by the stub
+harness (`scripts/run_gpu_stub_test.sh`), which models the SYCL item types so
+kernel signatures are type-checked. The same code is verified on a real device
+(AdaptiveCpp `--acpp-targets=generic` on an RTX 3060 under WSL2) by
+`scripts/run_gpu_build.sh` — see
+[GPU.md](GPU.md#measured-crossovers-rtx-3060-wsl2) for the measured crossovers,
+the pinned-transfer numbers, and the JIT cold-start caveat.
 
 ## Boundary rule
 

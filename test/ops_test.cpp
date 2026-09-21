@@ -14,6 +14,25 @@ TEST(Ops, ElementwiseMath) {
   EXPECT_DOUBLE_EQ(fp::exp(0.0), 1.0);
   EXPECT_DOUBLE_EQ(fp::log(1.0), 0.0);
   EXPECT_DOUBLE_EQ(fp::log1p(0.0), 0.0);
+  EXPECT_DOUBLE_EQ(fp::sin(0.0), 0.0);
+  EXPECT_DOUBLE_EQ(fp::cos(0.0), 1.0);
+  EXPECT_DOUBLE_EQ(fp::tanh(0.0), 0.0);
+  EXPECT_NEAR(fp::tanh(1.0), std::tanh(1.0), 1e-15);
+  EXPECT_NEAR(fp::sin(0.5), std::sin(0.5), 1e-15);
+}
+
+TEST(Ops, ElementwiseMathInPipelines) {
+  // The elementwise math is a plain lambda, so it drops into fp::map and the
+  // piped stages like any other unary function.
+  const std::vector<double> xs{0.0, 0.5, -0.5};
+  const auto ys = fp::map(xs, fp::tanh);
+  ASSERT_EQ(ys.size(), xs.size());
+  for (std::size_t i = 0; i < xs.size(); ++i)
+    EXPECT_DOUBLE_EQ(ys[i], std::tanh(xs[i]));
+
+  const auto zs = fp::out(fp::into(xs) | fp::map(fp::sin));
+  ASSERT_EQ(zs.size(), xs.size());
+  EXPECT_DOUBLE_EQ(zs[1], std::sin(0.5));
 }
 
 TEST(Ops, CurriedMinMaxPowClamp) {

@@ -109,11 +109,14 @@ TEST(Memory, SharedAndShare) {
 
 TEST(Memory, WithBuffer) {
   auto total = fp::with_buffer<double>(4, [](std::span<double> scratch) {
+    // `Buffer::alloc` (and therefore `with_buffer`) hands out raw storage:
+    // write before reading, or the sum reads uninitialized memory.
+    fp::fill(scratch, 1.0);
     fp::transform_inplace(scratch, [](double x) { return x + 1.0; });
     return fp::fold_left(scratch, 0.0, fp::plus);
   });
   ASSERT_TRUE(total.is_ok());
-  EXPECT_DOUBLE_EQ(total.value(), 4.0);
+  EXPECT_DOUBLE_EQ(total.value(), 8.0);
 }
 
 TEST(Memory, WithBufferVoid) {

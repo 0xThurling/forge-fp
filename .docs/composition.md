@@ -187,7 +187,7 @@ Full list:
 | comparison | `eq`, `ne`, `lt`, `le`, `gt`, `ge` |
 | logic | `and_`, `or_`, `not_` |
 | unary | `negate`, `increment`, `decrement` |
-| elementwise math | `abs`, `sqrt`, `exp`, `log`, `log1p`, `sign` |
+| elementwise math | `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `sign` |
 | min/max | `min_`, `max_` (captured value is the right operand) |
 | parameterized | `pow(k)`, `clamp(lo, hi)` |
 
@@ -220,6 +220,8 @@ The math functions are named values, so point-free pipelines stay readable:
 fp::map(v, fp::abs);              // |x|
 fp::map(v, fp::sqrt);             // sqrt(x)
 fp::map(v, fp::exp);              // e^x
+fp::map(v, fp::tanh);             // tanh(x) — RNN/LSTM gates
+fp::map(v, fp::sin);              // sin(x) — positional encodings
 fp::map(v, fp::log);              // ln(x)
 fp::map(v, fp::sign);             // -1 / 0 / +1
 ```

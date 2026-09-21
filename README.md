@@ -104,13 +104,13 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `map.hpp` | `lookup`, `map_values`, `filter_values`, `merge_with`, `keys`, `values`, `to_map`, `to_unordered_map` (all generic over `std::map`/`std::unordered_map`) |
 | `maybe.hpp` | `std::optional` combinators: `map`/`and_then`/`or_else`/`filter`/`flatten`/`apply`/`collect`/`value_or_lazy`/`>>=` |
 | `memoize.hpp` | `memoize<Arg>(f)`, `memoize2<A,B>(f)`, `memoizeN<Args...>(f)` |
-| `ops.hpp` | named operators: `plus`/`minus`/`times`/`divide`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, `and_`/`or_`/`not_`, `negate`/`increment`/`decrement` |
+| `ops.hpp` | named operators: `plus`/`minus`/`times`/`divide`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, `and_`/`or_`/`not_`, `negate`/`increment`/`decrement`, elementwise math (`abs`/`sqrt`/`exp`/`log`/`log1p`/`sin`/`cos`/`tanh`/`sign`), `min_`/`max_`/`pow`/`clamp` |
 | `parse.hpp` | `Parser<T>` + primitives/sequencing/choice/lexemes (`eof`/`peek`/`not_followed`/`label`/`context`/`many1`/`chainl1`), position-carrying errors, operators (`>>`, `<<`, `\|`, `>>=`, `*`, `%`) |
 | `print.hpp` | `operator<<` for `Result`/`Either`/`Validation` |
 | `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/`take_while`/`drop_while`/`unique`/`sort`/`sort_by`/`partition`/`span` + curried stages for `into(…) \| …` pipelines |
 | `result.hpp` | `Result<T>` + `ok`/`err`, `sequence`/`traverse`/`transpose`/`try_`/`combine2`/`context`/`collect_all`/`unwrap`, `std::expected` bridge (C++23) |
 | `simd.hpp` | `vec<T>`, `map_inplace`/`map_to`/`map_inplace_fixed`, `reduce`/`dot`, `map_sqrt`/`map_exp`, `clamp_inplace`/`normalize`/`threshold_inplace`, `par_map_inplace` *(opt-in)* |
-| `gpu.hpp` | SYCL device buffers + kernels (`Buffer<T>`, `map_to`, `transform_inplace`, `map`, `reduce`, `dot`) with a CPU fallback *(opt-in, see `GPU.md`)* |
+| `gpu.hpp` | SYCL device buffers + kernels (`Buffer<T>`, pinned `HostBuffer<T>`, `Scratch<T>`, `map_to`, `transform_inplace`, `map`, `axpy_inplace`, `softmax_rows`/`softmax_rows_wg`, `row_sums`/`row_means`/`col_sums`, `add_row_broadcast`, `reduce`, `dot`, tiled `matmul`/`batched_matmul`) with a CPU fallback *(opt-in, see `GPU.md`)* |
 | `task.hpp` | `Task<T>` (cancellable `AsyncResult`): `cancel`/`token`/`then`/`and_then`/`recover`/`join`, `std::stop_token` helpers (`cancel_after`, `cancelled`) |
 | `stream.hpp` | `Stream<T>` (pull/push `map`/`filter`/`subscribe`/`collect`/`take`/`take_while`/`scan`/`fold_left`/`concat`) |
 | `string.hpp` | `fp::str`: `split`/`split_view`/`join`/`trim`/`to_lower`/`to_upper`/`to_int`/`to_double`/… |

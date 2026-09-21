@@ -8,6 +8,10 @@
 // Use it by putting `test/support` on the include path (so
 // `__has_include(<sycl/sycl.hpp>)` is true) or by defining FP_GPU_SYCL after
 // including this header. See scripts/run_gpu_stub_test.sh.
+//
+// It models the SYCL item types: a `range` launch hands the kernel an `id`,
+// an `nd_range` launch an `nd_item`. Getting that wrong is a compile error
+// here as well as on a real toolchain.
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -58,6 +62,26 @@ public:
 private:
   range<Dims> global_;
   range<Dims> local_;
+};
+
+// The item handed to an `nd_range` kernel. Real implementations type-check
+// this: an `nd_range` kernel must take `nd_item`, never `id`. Modelling it
+// here means a signature mistake fails to compile in the stub too, instead of
+// only showing up on a machine with a SYCL toolchain.
+template <int Dims> class nd_item {
+public:
+  nd_item() = default;
+  nd_item(id<Dims> global, id<Dims> local, id<Dims> group)
+      : global_(global), local_(local), group_(group) {}
+
+  std::size_t get_global_id(int) const { return global_[0]; }
+  std::size_t get_local_id(int) const { return local_[0]; }
+  std::size_t get_group_id(int) const { return group_[0]; }
+
+private:
+  id<Dims> global_;
+  id<Dims> local_;
+  id<Dims> group_;
 };
 
 namespace aspect {
@@ -156,8 +180,12 @@ public:
 
   template <class Kernel> void parallel_for(nd_range<1> r, Kernel kernel) {
     const std::size_t n = r.get_global_range().size();
-    for (std::size_t i = 0; i < n; ++i)
-      kernel(id<1>{i});
+    const std::size_t local = r.get_local_range().size();
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::size_t l = local == 0 ? 0 : i % local;
+      const std::size_t g = local == 0 ? 0 : i / local;
+      kernel(nd_item<1>{id<1>{i}, id<1>{l}, id<1>{g}});
+    }
   }
 
   void wait_and_throw() {}
@@ -181,6 +209,17 @@ template <class T> T *malloc_shared(std::size_t count, queue const &) {
 template <class T>
 T *aligned_alloc_shared(std::size_t, std::size_t count, queue const &q) {
   return malloc_shared<T>(count, q);
+}
+
+// Pinned host memory: an ordinary host allocation in the stub (there is no
+// device to DMA from), which is exactly what the CPU fallback does.
+template <class T> T *malloc_host(std::size_t count, queue const &) {
+  return static_cast<T *>(std::malloc(count * sizeof(T)));
+}
+
+template <class T>
+T *aligned_alloc_host(std::size_t, std::size_t count, queue const &q) {
+  return malloc_host<T>(count, q);
 }
 
 inline void free(void *ptr, queue const &) { std::free(ptr); }

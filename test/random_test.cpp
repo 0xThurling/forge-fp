@@ -61,8 +61,9 @@ TEST(Random, SampleIndices) {
   std::sort(idx.begin(), idx.end());
   for (std::size_t i = 0; i < idx.size(); ++i) {
     EXPECT_LT(idx[i], 10u);
-    if (i > 0)
+    if (i > 0) {
       EXPECT_LT(idx[i - 1], idx[i]);
+    }
   }
 
   EXPECT_EQ(rng.sample_indices(3, 99).size(), 3u);

@@ -77,6 +77,9 @@ inline constexpr auto sqrt  = [](auto x) { return std::sqrt(x); };
 inline constexpr auto exp   = [](auto x) { return std::exp(x); };
 inline constexpr auto log   = [](auto x) { return std::log(x); };
 inline constexpr auto log1p = [](auto x) { return std::log1p(x); };
+inline constexpr auto sin   = [](auto x) { return std::sin(x); };
+inline constexpr auto cos   = [](auto x) { return std::cos(x); };
+inline constexpr auto tanh  = [](auto x) { return std::tanh(x); };
 inline constexpr auto sign  = [](auto x) { return (x > 0) - (x < 0); };
 
 // min_/max_ follow the comparison convention: the captured value is the right

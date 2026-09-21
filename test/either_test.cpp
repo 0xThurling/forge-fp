@@ -32,6 +32,22 @@ TEST(Either, OrElseMapErrorBimapSwap) {
   EXPECT_EQ(fp::swap(E::ok(1)).error(), 1);
 }
 
+TEST(Either, BimapAppliesBothSides) {
+  using E = fp::Either<std::string, int>;
+  // Regression: the success side used to return the raw value, silently
+  // ignoring `on_ok` (the identity lambda in the older test hid it).
+  auto ok = fp::bimap(E::ok(20), [](std::string e) { return (int)e.size(); },
+                      [](int x) { return x * 2; });
+  ASSERT_TRUE(ok.is_ok());
+  EXPECT_EQ(ok.value(), 40);
+
+  auto err = fp::bimap(E::err(std::string("abc")),
+                       [](std::string e) { return (int)e.size(); },
+                       [](int x) { return x * 2; });
+  ASSERT_FALSE(err.is_ok());
+  EXPECT_EQ(err.error(), 3);
+}
+
 TEST(Either, FlattenToOptionalRightsLefts) {
   using E = fp::Either<std::string, int>;
   using Nested = fp::Either<std::string, E>;

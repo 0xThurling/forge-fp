@@ -95,6 +95,118 @@ int main() {
   if (shared.is_ok())
     shared.value().data()[0] = 4.0;
 
+  // Pinned staging (an ordinary host block in the stub).
+  auto staging = fp::gpu::HostBuffer<double>::alloc(4);
+  check(staging.is_ok() && staging.value().size() == 4 &&
+            staging.value().is_pinned() == fp::gpu::available,
+        "host staging");
+  staging.value().span()[0] = 1.0;
+  staging.value().span()[1] = 2.0;
+  auto staged = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{9.0, 9.0});
+  check(staged.is_ok() && staged.value().copy_from(staging.value()).is_ok() &&
+            staged.value().to_host().value() == std::vector<double>({1.0, 2.0}),
+        "staged copy_from");
+  check(staged.value().to_host(staging.value()).is_ok() &&
+            staging.value().span()[1] == 2.0,
+        "staged read-back");
+
+  // Row/column kernels.
+  auto grid = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  const auto rs = fp::gpu::row_sums(grid.value(), 2, 3);
+  check(rs.is_ok() &&
+            rs.value().to_host().value() == std::vector<double>({6.0, 15.0}),
+        "row_sums");
+  const auto rm = fp::gpu::row_means(grid.value(), 2, 3);
+  check(rm.is_ok() &&
+            rm.value().to_host().value() == std::vector<double>({2.0, 5.0}),
+        "row_means");
+  const auto cs = fp::gpu::col_sums(grid.value(), 2, 3);
+  check(cs.is_ok() &&
+            cs.value().to_host().value() == std::vector<double>({5.0, 7.0, 9.0}),
+        "col_sums");
+  auto bias = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{10.0, 20.0, 30.0});
+  check(fp::gpu::add_row_broadcast(grid.value(), 2, 3, bias.value()).is_ok() &&
+            grid.value().to_host().value() ==
+                std::vector<double>({11.0, 22.0, 33.0, 14.0, 25.0, 36.0}),
+        "add_row_broadcast");
+
+  // The work-group softmax forwards to the portable one without group
+  // algorithms (the stub cannot emulate barriers).
+  auto wg = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 2.0, 3.0, 0.0, 0.0, 0.0});
+  check(fp::gpu::softmax_rows_wg(wg.value(), 2, 3).is_ok() &&
+            std::abs(wg.value().to_host().value()[3] - 1.0 / 3.0) < 1e-12,
+        "softmax_rows_wg");
+
+  // Scratch-backed reductions reuse their buffers across calls.
+  fp::gpu::Scratch<double> scratch;
+  auto big2 =
+      fp::gpu::Buffer<double>::from_host(std::vector<double>(5000, 1.5));
+  const auto sum2 = fp::gpu::reduce(big2.value(), 0.0, scratch);
+  check(sum2.is_ok() && std::abs(sum2.value() - 7500.0) < 1e-9,
+        "reduce with scratch");
+  const auto d2 = fp::gpu::dot(big2.value(), big2.value(), scratch);
+  check(d2.is_ok() && std::abs(d2.value() - 11'250.0) < 1e-9,
+        "dot with scratch");
+
+  // Position-aware and multi-input kernels.
+  auto idx = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 2.0, 3.0, 4.0});
+  check(fp::gpu::transform_inplace_indexed(
+            idx.value(), [](std::size_t i, double x) { return x + double(i); })
+                .is_ok() &&
+            idx.value().to_host().value() ==
+                std::vector<double>({1.0, 3.0, 5.0, 7.0}),
+        "transform_inplace_indexed");
+  auto zip_a = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 2.0, 3.0});
+  auto zip_b = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{10.0, 20.0, 30.0});
+  check(fp::gpu::zip_transform_inplace(zip_a.value(), zip_b.value(),
+                                      [](double x, double y) { return x + y; })
+                .is_ok() &&
+            zip_a.value().to_host().value() ==
+                std::vector<double>({11.0, 22.0, 33.0}),
+        "zip_transform_inplace");
+  check(fp::gpu::zip3_transform_inplace(
+            zip_a.value(), zip_b.value(), zip_b.value(),
+            [](double x, double y, double z) { return x + y + z; })
+                .is_ok() &&
+            zip_a.value().to_host().value() ==
+                std::vector<double>({31.0, 62.0, 93.0}),
+        "zip3_transform_inplace");
+
+  // transpose through the non-group device path.
+  auto tm = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  const auto tt = fp::gpu::transpose(tm.value(), 2, 3);
+  check(tt.is_ok() && tt.value().to_host().value() ==
+                          std::vector<double>({1.0, 4.0, 2.0, 5.0, 3.0, 6.0}),
+        "transpose");
+
+  // matmul / batched_matmul through the non-group device path.
+  auto ma = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  auto mb = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
+  const auto mc = fp::gpu::matmul(ma.value(), mb.value(), 2, 3, 2);
+  check(mc.is_ok() && mc.value().to_host().value() ==
+                          std::vector<double>({58.0, 64.0, 139.0, 154.0}),
+        "matmul");
+  auto bm_a = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0});
+  auto bm_b = fp::gpu::Buffer<double>::from_host(
+      std::vector<double>{1.0, 2.0, 3.0, 4.0, 1.0, 0.0, 0.0, 1.0});
+  const auto bm_c =
+      fp::gpu::batched_matmul(bm_a.value(), bm_b.value(), 2, 2, 2, 2);
+  check(bm_c.is_ok() &&
+            bm_c.value().to_host().value() ==
+                std::vector<double>({1.0, 2.0, 3.0, 4.0, 2.0, 0.0, 0.0, 2.0}),
+        "batched_matmul");
+
   // Error paths.
   auto small = fp::gpu::Buffer<int>::alloc(1);
   auto small2 = fp::gpu::Buffer<int>::alloc(2);

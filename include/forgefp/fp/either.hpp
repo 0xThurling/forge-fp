@@ -140,7 +140,7 @@ auto bimap(Either<E, T> const &e, F on_err, G on_ok)
   using E2 = std::invoke_result_t<F, E>;
   using T2 = std::invoke_result_t<G, T>;
   if (e.is_ok())
-    return Either<E2, T2>::ok(e.value());
+    return Either<E2, T2>::ok(on_ok(e.value()));
   return Either<E2, T2>::err(on_err(e.error()));
 }
 

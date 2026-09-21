@@ -4,9 +4,10 @@ ForgeFP is a header-only, zero-dependency C++20 functional-programming library.
 This directory is the usage reference: what's in the library, how the pieces fit
 together, and worked examples for everything.
 
-Everything lives in the `fp` namespace (string utilities in `fp::str`). Include
-one header for a single module, or `fp/all.hpp` for everything except the
-opt-in `simd.hpp` and `macros.hpp`.
+Everything lives in the `fp` namespace (string utilities in `fp::str`, GPU in
+`fp::gpu`). Include one header for a single module, or `fp/all.hpp` for
+everything except the opt-ins: `simd.hpp`, `gpu.hpp`, `autodiff.hpp` and
+`macros.hpp`.
 
 ## Modules
 
@@ -33,7 +34,7 @@ opt-in `simd.hpp` and `macros.hpp`.
 | [Serialization](serialization.md) | `serialize.hpp` | generic text/binary round-trip for numeric ranges |
 | [Autodiff](autodiff.md) | `autodiff.hpp` | forward-mode `Dual<T>`, `derivative` *(opt-in)* |
 | [SIMD](simd.md) | `simd.hpp` | vectorized `map`/`reduce`/`dot`/math, `axpy_inplace` |
-| GPU (SYCL) | `gpu.hpp` | device buffers + kernels (`map_to`, `axpy`, `softmax_rows`, chunked `reduce`/`dot`) with a CPU fallback — see [`GPU.md`](../GPU.md) *(opt-in, phase 0/1)* |
+| [GPU kernels (SYCL)](gpu.md) | `gpu.hpp` | device buffers + kernels (`Buffer`/`HostBuffer`/`Scratch`, elementwise, row/column, `softmax_rows`, tiled `matmul`/`transpose`, `reduce`/`dot`) with a CPU fallback — design and measurements in [`GPU.md`](../GPU.md) *(opt-in)* |
 | [Function composition](composition.md) | `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp` | pipes, currying, named operators (incl. `abs`/`sqrt`/`exp`/`log`/`min_`/`max_`/`pow`/`clamp`) |
 | [Pattern matching](pattern-matching.md) | `adt.hpp` | `match`, `case_`, `cond`, `when`, `otherwise` |
 | [Macros](macros.md) | `macros.hpp` | `FP_TRY` |

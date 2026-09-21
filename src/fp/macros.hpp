@@ -84,8 +84,10 @@ inline void use_fp_try_value_or_void(auto &&x) {
 // propagates the error. A failed `_fp_r` returns a converting propagator, so
 // the enclosing function may return `Result<T>`, `Validation<T>`, or
 // `Outcome<T>`.
+// `__extension__` keeps the statement expression quiet under -Wpedantic; it is
+// a no-op for the language (GCC/Clang only, which is where this form exists).
 #define FP_TRY(expr)                                                           \
-  ({                                                                           \
+  __extension__({                                                              \
     auto _fp_r = (expr);                                                       \
     if (!_fp_r.is_ok())                                                        \
       return fp::detail::try_propagator_for<decltype(_fp_r)>{_fp_r.error()};   \
