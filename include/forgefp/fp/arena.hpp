@@ -1,5 +1,5 @@
 #pragma once
-#include "forgefp/fp/scope.hpp"
+#include "scope.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <new>

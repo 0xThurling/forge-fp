@@ -1,6 +1,6 @@
 #pragma once
-#include "forgefp/fp/compose.hpp"
-#include "forgefp/fp/concurrent.hpp"
+#include "compose.hpp"
+#include "concurrent.hpp"
 #include <cstddef>
 #include <functional>
 #include <optional>

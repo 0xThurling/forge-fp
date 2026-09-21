@@ -1,5 +1,5 @@
 #pragma once
-#include "forgefp/fp/compose.hpp"
+#include "compose.hpp"
 #include <optional>
 #include <stdexcept>
 #include <string>

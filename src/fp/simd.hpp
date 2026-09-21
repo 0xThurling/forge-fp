@@ -6,7 +6,7 @@
 #error "fp/simd.hpp requires <experimental/simd> (GCC/Clang); use scalar fp:: instead"
 #else
 
-#include "fp/concurrent.hpp"
+#include "concurrent.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstddef>

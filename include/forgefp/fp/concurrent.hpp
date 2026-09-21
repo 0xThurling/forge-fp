@@ -18,8 +18,8 @@
 #include <utility>
 #include <vector>
 
-#include "forgefp/fp/result.hpp"
-#include "forgefp/fp/task.hpp"
+#include "result.hpp"
+#include "task.hpp"
 
 namespace fp {
 template <class T, class F>

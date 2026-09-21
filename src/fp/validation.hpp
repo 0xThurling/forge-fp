@@ -1,6 +1,6 @@
 #pragma once
 #include "either.hpp"
-#include "fp/result.hpp"
+#include "result.hpp"
 #include <string>
 #include <type_traits>
 #include <vector>

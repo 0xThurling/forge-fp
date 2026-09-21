@@ -1,5 +1,5 @@
 #pragma once
-#include "forgefp/fp/result.hpp"
+#include "result.hpp"
 #include <optional>
 #include <stdexcept>
 #include <type_traits>

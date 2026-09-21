@@ -1,6 +1,6 @@
 #pragma once
-#include "forgefp/fp/grid.hpp"
-#include "forgefp/fp/result.hpp"
+#include "grid.hpp"
+#include "result.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cmath>

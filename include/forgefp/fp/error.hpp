@@ -3,7 +3,7 @@
 // source location where the error was created. `Outcome<T>` is the
 // `Either<Error, T>` counterpart of the string-based `Result<T>`.
 
-#include "forgefp/fp/result.hpp"
+#include "result.hpp"
 #include <source_location>
 #include <string>
 #include <system_error>

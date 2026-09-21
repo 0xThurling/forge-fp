@@ -219,9 +219,12 @@ Common failures and their `Result` messages:
 | Failure | Message |
 |---|---|
 | No SYCL in the build | `"no SYCL device: ForgeFP was built without SYCL"` |
-| Device allocation fails | `"sycl: device allocation failed"` |
+| Device / pinned allocation fails | `"sycl: device allocation failed"`, `"sycl: pinned allocation failed"` |
 | Kernel/runtime error | `"sycl: <e.what()>"` |
-| Size mismatch (`map_to`, `dot`) | `"gpu::map_to: destination too small"`, `"gpu::dot: size mismatch"` |
+| Shape mismatch | `"gpu::<kernel>: shape mismatch"` — `softmax_rows`, `softmax_rows_wg`, `row_sums`, `row_means`, `col_sums`, `add_row_broadcast`, `transpose`, `matmul`, `batched_matmul` |
+| Size mismatch | `"gpu::<kernel>: size mismatch"` / `"…: destination too small"` — `map_to`, `axpy_inplace`, `dot`, `zip_transform_inplace`, `zip3_transform_inplace` |
+| Staging buffer too small | `"gpu::copy_from: staging buffer too small"`, `"gpu::to_host: staging buffer too small"` |
+| Row wider than the work-group | `"gpu::softmax_rows_wg: cols exceeds the work-group size"` |
 
 ## Determinism
 
@@ -417,8 +420,8 @@ OpenCL ICD is registered (harmless for the CUDA/CPU backends), and the
   `map_to`/`transform_inplace`/`map`, `axpy_inplace`, `softmax_rows` (both
   variants), pinned staging, row/column kernels, `reduce`/`dot` with and
   without `Scratch`, `matmul`/`batched_matmul` (including non-tile-multiple
-  sizes), move semantics, and error paths. 17 tests, part of the normal suite
-  (271 tests total today).
+  sizes), `transpose`, the indexed/zip kernels, move semantics, and error
+  paths. 19 tests, part of the normal suite (275 tests total today).
 - **The SYCL branch is compiled and exercised on CPU by a stub**:
   `test/support/sycl/sycl.hpp` implements the subset of SYCL 2020 fp uses
   (`queue`, `range`/`nd_range`/`id`/`nd_item`, USM allocation, `parallel_for`,
@@ -427,8 +430,8 @@ OpenCL ICD is registered (harmless for the CUDA/CPU backends), and the
   `id`, an `nd_range` launch an `nd_item` — so a kernel signature a real
   implementation would reject fails to compile here too. (The first version
   passed `id` to `nd_range` kernels and only the real toolchain caught it.)
-  `bench/gpu_stub_test.cpp` runs the whole API through it (33 checks,
-  including the row/column, scratch, and matmul kernels); run
+  `bench/gpu_stub_test.cpp` runs the whole API through it (37 checks,
+  including the row/column, scratch, matmul, transpose and zip kernels); run
   `scripts/run_gpu_stub_test.sh`. This catches type errors, API misuse, buffer
   lifetime bugs, and value drift in the SYCL path without a GPU.
 - **What the stub cannot verify**: parallelism, work-group barrier semantics
@@ -448,7 +451,7 @@ OpenCL ICD is registered (harmless for the CUDA/CPU backends), and the
 | Phase | Contents | Gate |
 |---|---|---|
 | **0 (landed)** | detection, `available`, `default_device_info`, `Buffer<T>`, `map_to`, `transform_inplace`, `map`, host-side `reduce`/`dot`, fallback, tests | fallback suite green |
-| **1 (landed)** | `usable()` + USM-aspect fallback, over-aligned/shared allocation, `nd_range` launches, chunked device `reduce`/`dot`, `axpy_inplace`, `softmax_rows`, backend/device reporting, GPU-first selector, CPU SYCL stub test | fallback suite 264/264; stub harness all checks pass; `gpu_smoke` green on an RTX 3060 (AdaptiveCpp `generic`) |
+| **1 (landed)** | `usable()` + USM-aspect fallback, over-aligned/shared allocation, `nd_range` launches, chunked device `reduce`/`dot`, `axpy_inplace`, `softmax_rows`, backend/device reporting, GPU-first selector, CPU SYCL stub test | fallback suite 275/275; stub harness all checks pass; `gpu_smoke` green on an RTX 3060 (AdaptiveCpp `generic`) |
 | **1b (landed)** | `bench/gpu_bench.cpp`: transfer (pageable vs pinned), `transform_inplace`, `map_to`, `reduce`, `dot`, `axpy`, `softmax_rows` vs `fp::inplace`/`fp::simd`/`fp::numerics` | crossovers documented in [Phase 1b](#phase-1b-measured-crossovers-rtx-3060-wsl2) |
 | **1c (landed)** | pinned staging: reusable `HostBuffer<T>` (`sycl::malloc_host`), `copy_from` / `to_host(staging)` | 2.8× / 2.3× pageable transfer at 16 MiB, no per-call allocation |
 | **2 (landed)** | `row_sums` / `row_means` / `col_sums` / `add_row_broadcast`; `softmax_rows_wg` (local memory + barriers); reusable `Scratch<T>` for `reduce`/`dot` | matches `fp::linalg`/`fp::numerics`; GPU wins from 256K (rows) and 4M (reductions) |

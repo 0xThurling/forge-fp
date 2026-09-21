@@ -1,6 +1,6 @@
 #pragma once
 
-#include "forgefp/fp/result.hpp"
+#include "result.hpp"
 #include <cstddef>
 #include <cstring>
 #include <filesystem>

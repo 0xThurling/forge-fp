@@ -5,7 +5,8 @@ dependencies. ForgeFP brings typical functional tools to modern C++: algebraic
 data types (`Either`, `Result`, `Validation`), optional composition, vector/range
 combinators, parser combinators, function composition and currying, named
 operators, string utilities, file & input I/O, an arena allocator, SIMD mapping,
-and concurrency helpers (thread pool, channels, actors, streams).
+opt-in GPU kernels (SYCL, with a CPU fallback), and concurrency helpers (thread
+pool, channels, actors, streams).
 
 ```cpp
 #include <fp/all.hpp>
@@ -37,6 +38,7 @@ fp::Result<int> r = fp::str::to_int("21")
 | Compiler | GCC 11+ or Clang 14+ |
 | Threading | `-pthread` when using `concurrent.hpp` |
 | `simd.hpp` | a target with `native_simd` (x86-64 / ARM64, GCC libstdc++) |
+| `gpu.hpp` | a SYCL 2020 implementation (AdaptiveCpp or oneAPI DPC++) to run on a device; without one every kernel falls back to the CPU |
 
 The library is header-only — nothing to link.
 
@@ -50,6 +52,10 @@ Two byte-identical trees, one header per module:
   or one module (`#include <fp/vec.hpp>`), with `-I src`.
 - **`include/forgefp/fp/`** — the installed mirror (same files, byte-identical).
   Include as `#include <forgefp/fp/all.hpp>`.
+
+Headers include their siblings with relative paths, so every header is
+self-contained: it parses on its own (no `-I` flags needed for the library's
+own includes), which also keeps editors and static analyzers happy.
 
 ```bash
 g++ -std=c++20 -I src my_program.cpp -pthread
@@ -110,7 +116,7 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/`take_while`/`drop_while`/`unique`/`sort`/`sort_by`/`partition`/`span` + curried stages for `into(…) \| …` pipelines |
 | `result.hpp` | `Result<T>` + `ok`/`err`, `sequence`/`traverse`/`transpose`/`try_`/`combine2`/`context`/`collect_all`/`unwrap`, `std::expected` bridge (C++23) |
 | `simd.hpp` | `vec<T>`, `map_inplace`/`map_to`/`map_inplace_fixed`, `reduce`/`dot`, `map_sqrt`/`map_exp`, `clamp_inplace`/`normalize`/`threshold_inplace`, `par_map_inplace` *(opt-in)* |
-| `gpu.hpp` | SYCL device buffers + kernels (`Buffer<T>`, pinned `HostBuffer<T>`, `Scratch<T>`, `map_to`, `transform_inplace`, `map`, `axpy_inplace`, `softmax_rows`/`softmax_rows_wg`, `row_sums`/`row_means`/`col_sums`, `add_row_broadcast`, `reduce`, `dot`, tiled `matmul`/`batched_matmul`) with a CPU fallback *(opt-in, see `GPU.md`)* |
+| `gpu.hpp` | SYCL device buffers + kernels (`Buffer<T>`, pinned `HostBuffer<T>`, `Scratch<T>`, `map_to`, `transform_inplace`, `transform_inplace_indexed`, `zip_transform_inplace`/`zip3_transform_inplace`, `map`, `axpy_inplace`, `softmax_rows`/`softmax_rows_wg`, `row_sums`/`row_means`/`col_sums`, `add_row_broadcast`, `transpose`, `reduce`, `dot`, tiled `matmul`/`batched_matmul`) with a CPU fallback *(opt-in, see `GPU.md`)* |
 | `task.hpp` | `Task<T>` (cancellable `AsyncResult`): `cancel`/`token`/`then`/`and_then`/`recover`/`join`, `std::stop_token` helpers (`cancel_after`, `cancelled`) |
 | `stream.hpp` | `Stream<T>` (pull/push `map`/`filter`/`subscribe`/`collect`/`take`/`take_while`/`scan`/`fold_left`/`concat`) |
 | `string.hpp` | `fp::str`: `split`/`split_view`/`join`/`trim`/`to_lower`/`to_upper`/`to_int`/`to_double`/… |

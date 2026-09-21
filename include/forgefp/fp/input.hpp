@@ -1,5 +1,5 @@
 #pragma once
-#include "forgefp/fp/stream.hpp"
+#include "stream.hpp"
 #include <iostream>
 #include <iterator>
 #include <optional>

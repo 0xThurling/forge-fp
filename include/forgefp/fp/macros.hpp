@@ -1,8 +1,8 @@
 #pragma once
 
-#include "forgefp/fp/error.hpp"
-#include "forgefp/fp/result.hpp"
-#include "forgefp/fp/validation.hpp"
+#include "error.hpp"
+#include "result.hpp"
+#include "validation.hpp"
 #include <type_traits>
 #include <utility>
 

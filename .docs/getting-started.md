@@ -7,14 +7,16 @@
 - Nothing else — header-only, no CMake package required, no third-party
   dependency.
 - `-pthread` when you use `concurrent.hpp`/`task.hpp`; a native-SIMD target
-  when you use `simd.hpp`.
+  when you use `simd.hpp`; a SYCL 2020 implementation (AdaptiveCpp or oneAPI
+  DPC++) to run `gpu.hpp` kernels on a device — without one they fall back to
+  the CPU, so nothing extra is required to build.
 
 ## Include
 
 The headers live in `src/fp/` (or the installed mirror `include/forgefp/fp/`).
 
 ```cpp
-#include <fp/all.hpp>     // everything except simd.hpp, autodiff.hpp, macros.hpp
+#include <fp/all.hpp>     // everything except simd.hpp, gpu.hpp, autodiff.hpp, macros.hpp
 ```
 
 Individual modules keep compile times down and make dependencies explicit:
@@ -25,8 +27,8 @@ Individual modules keep compile times down and make dependencies explicit:
 #include <fp/string.hpp>
 ```
 
-Everything is in `namespace fp`, except the string helpers (`fp::str`) and the
-autodiff elementary functions (`fp::ad`).
+Everything is in `namespace fp`, except the string helpers (`fp::str`), the GPU
+tier (`fp::gpu`) and the autodiff elementary functions (`fp::ad`).
 
 ## Build
 
@@ -67,6 +69,7 @@ cmake -B build && cmake --build build
 | [Composition](composition.md) | `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp` | pipes, currying, named operators |
 | [Concurrency](concurrency.md) | `concurrent.hpp`, `task.hpp`, `stream.hpp` | thread pool, channels, actors, cancellation, streams |
 | [SIMD](simd.md) *(opt-in)* | `simd.hpp` | vectorized map/reduce/dot/math |
+| [GPU kernels](gpu.md) *(opt-in)* | `gpu.hpp` | SYCL device buffers + kernels with a CPU fallback |
 | [Autodiff](autodiff.md) *(opt-in)* | `autodiff.hpp` | forward-mode `Dual<T>`, `derivative` |
 | [Macros](macros.md) *(opt-in)* | `macros.hpp` | `FP_TRY` early-return |
 
@@ -164,11 +167,12 @@ also fail.
 
 ## Opt-in headers
 
-`all.hpp` deliberately stops short of three headers:
+`all.hpp` deliberately stops short of four headers:
 
 | Header | Why opt-in |
 |---|---|
 | `simd.hpp` | needs `<experimental/simd>` and a native-SIMD target |
+| `gpu.hpp` | pulls in `<sycl/sycl.hpp>`, which is heavy, and a device build needs a toolchain |
 | `autodiff.hpp` | a specialized numeric tool, not part of the everyday surface |
 | `macros.hpp` | macros should never arrive uninvited |
 

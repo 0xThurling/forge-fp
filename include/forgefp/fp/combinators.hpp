@@ -1,6 +1,6 @@
 #pragma once
 
-#include "forgefp/fp/compose.hpp"
+#include "compose.hpp"
 #include <functional>
 #include <type_traits>
 #include <utility>

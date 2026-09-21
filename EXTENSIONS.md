@@ -123,7 +123,7 @@ Every new fp primitive must satisfy:
 | `fp/arena.hpp` (extend) | 1 | `alloc_bytes`, `alloc_span`, `mark`/`reset_to`, `with_arena_scope` | both |
 | `fp/views.hpp` (extend) | 2 | `zip_with`, `zip3`, `chunk(n)`, `slide(n)`, `stride(n)`, `take_last(n)` | both |
 | `fp/grid.hpp` (extend) | 2 | `map2d_indexed`, `map2d_inplace`, `windows2d`, `column` | ml (CNN, scaling), forge-gl (pixels) |
-| `fp/ops.hpp` (extend) | 2 | `abs`, `sqrt`, `exp`, `log`, `log1p`, `pow(k)`, `sign`, `min_`, `max_`, `clamp(lo, hi)` | both |
+| `fp/ops.hpp` (extend) | 2 | `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `pow(k)`, `sign`, `min_`, `max_`, `clamp(lo, hi)` | both |
 | `fp/numerics.hpp` | 2 | `softmax`, `softmax_rows`, `log_softmax`, `logsumexp`, `sigmoid`, `relu`, `clamp`, `linspace`, `arange`, `approx_equal`, `is_finite`, `nan_to_num`, `central_difference` | both |
 | `fp/linalg.hpp` | 3 | `matmul`, `batched_matmul`, `matvec`, `outer`, `solve`, `norm_l1/l2`, `argmax/argmin`, `argmax_rows`, `mean`, `variance`, `row_sums/col_sums`, `row_means/col_means`, `hadamard`, `scale`, `add_row_broadcast` | both |
 | `fp/simd.hpp` (extend) | 3 | `axpy_inplace` | both |

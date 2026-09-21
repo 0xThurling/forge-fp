@@ -1,5 +1,5 @@
 #pragma once
-#include "forgefp/fp/either.hpp"
+#include "either.hpp"
 #include <algorithm>
 #include <optional>
 #include <stdexcept>

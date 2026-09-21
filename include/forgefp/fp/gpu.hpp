@@ -10,12 +10,12 @@
 // kernels (`map_to`, `transform_inplace`, `map`, `axpy_inplace`,
 // `softmax_rows`), and chunked device reductions (`reduce`, `dot`).
 
-#include "forgefp/fp/inplace.hpp"
-#include "forgefp/fp/linalg.hpp"
-#include "forgefp/fp/numerics.hpp"
-#include "forgefp/fp/ops.hpp"
-#include "forgefp/fp/ranges.hpp"
-#include "forgefp/fp/result.hpp"
+#include "inplace.hpp"
+#include "linalg.hpp"
+#include "numerics.hpp"
+#include "ops.hpp"
+#include "ranges.hpp"
+#include "result.hpp"
 #include <algorithm>
 #include <cmath>
 #include <concepts>

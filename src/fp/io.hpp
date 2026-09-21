@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fp/result.hpp"
+#include "result.hpp"
 #include <cstddef>
 #include <cstring>
 #include <filesystem>

@@ -1,5 +1,5 @@
 #pragma once
-#include "forgefp/fp/error.hpp"
+#include "error.hpp"
 #include <cstddef>
 #include <ostream>
 #include <string>

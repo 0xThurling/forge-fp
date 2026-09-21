@@ -118,7 +118,8 @@ Use `>>=` for two or three steps and for pipelines you build as values; use
 
 ## Implementation notes
 
-- `FP_TRY` is a statement expression `({ ... })` on GCC/Clang.
+- `FP_TRY` is a statement expression `__extension__({ ... })` on GCC/Clang;
+  the `__extension__` keeps it quiet under `-Wpedantic`.
 - `FP_TRY_VALUE`/`FP_TRY_VOID` are ordinary statement macros and work on every
   compiler.
 - Everything is `fp::`-qualified, so no `using namespace fp;` is needed.

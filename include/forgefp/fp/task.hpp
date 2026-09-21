@@ -7,8 +7,8 @@
 // A task that is superseded by another, or that runs long without checking its
 // token, cannot be preempted.
 
-#include "forgefp/fp/error.hpp"
-#include "forgefp/fp/result.hpp"
+#include "error.hpp"
+#include "result.hpp"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
