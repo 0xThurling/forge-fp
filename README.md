@@ -110,6 +110,7 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/`take_while`/`drop_while`/`unique`/`sort`/`sort_by`/`partition`/`span` + curried stages for `into(…) \| …` pipelines |
 | `result.hpp` | `Result<T>` + `ok`/`err`, `sequence`/`traverse`/`transpose`/`try_`/`combine2`/`context`/`collect_all`/`unwrap`, `std::expected` bridge (C++23) |
 | `simd.hpp` | `vec<T>`, `map_inplace`/`map_to`/`map_inplace_fixed`, `reduce`/`dot`, `map_sqrt`/`map_exp`, `clamp_inplace`/`normalize`/`threshold_inplace`, `par_map_inplace` *(opt-in)* |
+| `gpu.hpp` | SYCL device buffers + kernels (`Buffer<T>`, `map_to`, `transform_inplace`, `map`, `reduce`, `dot`) with a CPU fallback *(opt-in, see `GPU.md`)* |
 | `task.hpp` | `Task<T>` (cancellable `AsyncResult`): `cancel`/`token`/`then`/`and_then`/`recover`/`join`, `std::stop_token` helpers (`cancel_after`, `cancelled`) |
 | `stream.hpp` | `Stream<T>` (pull/push `map`/`filter`/`subscribe`/`collect`/`take`/`take_while`/`scan`/`fold_left`/`concat`) |
 | `string.hpp` | `fp::str`: `split`/`split_view`/`join`/`trim`/`to_lower`/`to_upper`/`to_int`/`to_double`/… |
@@ -152,7 +153,8 @@ chain with no error branches.
 ## Notes
 
 - **Header-only, no ABI** — everything is templates or `inline`.
-- **Opt-ins** — `simd.hpp` and `macros.hpp` are *not* in `all.hpp`; include
+- **Opt-ins** — `simd.hpp`, `autodiff.hpp`, `gpu.hpp` and `macros.hpp` are
+  *not* in `all.hpp`; include
   them explicitly. `simd.hpp` requires `<experimental/simd>` (GCC/Clang); the
   `FP_TRY_VALUE`/`FP_TRY_VOID` macros are portable.
 - **Threads** — `concurrent.hpp` needs `-pthread`.

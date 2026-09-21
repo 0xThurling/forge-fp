@@ -7,6 +7,7 @@
 #else
 
 #include "fp/concurrent.hpp"
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <experimental/simd>
@@ -89,6 +90,27 @@ template <class T> T dot(std::vector<T> const &a, std::vector<T> const &b) {
   for (; i < n; ++i)
     total += a[i] * b[i];
   return total;
+}
+
+// y += a * x (the optimizer update primitive). Operates on the common prefix.
+template <class T>
+void axpy_inplace(std::vector<T> &y, T a, std::vector<T> const &x) {
+  using V = vec<T>;
+  constexpr std::size_t width = V::size();
+  const std::size_t n = std::min(y.size(), x.size());
+  T *py = y.data();
+  T const *px = x.data();
+
+  std::size_t i = 0;
+  for (; i + width <= n; i += width) {
+    V vy, vx;
+    vy.copy_from(py + i, std::experimental::element_aligned);
+    vx.copy_from(px + i, std::experimental::element_aligned);
+    vy += V(a) * vx;
+    vy.copy_to(py + i, std::experimental::element_aligned);
+  }
+  for (; i < n; ++i)
+    py[i] += a * px[i];
 }
 
 template <class T, class F> auto map_to(std::vector<T> const &src, F f) {

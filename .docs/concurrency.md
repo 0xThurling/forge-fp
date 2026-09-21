@@ -55,6 +55,31 @@ int  c = fp::par_reduce(pool, v, 0, [](int x, int y) { return x + y; });
 `par_reduce` requires an associative `op` (the reduction is reordered across
 workers). `par_map`/`par_for_each` preserve element order in the result.
 
+Three more pool-based primitives cover the shapes those three don't:
+
+```cpp
+// f(i) for i in [begin, end) — the tiling primitive for index work
+fp::par_for(pool, 0, rows, [&](std::size_t i) {
+  for (std::size_t j = 0; j < cols; ++j)
+    out[i][j] = a[i][j] * 2;
+});
+
+// f(i, v[i]) — index + element
+fp::par_for_each_index(pool, v, [&](std::size_t i, int x) {
+  doubled[i] = x * 2;
+});
+
+// f(src[i]) -> dst[i], writing into a caller-owned buffer (no result vector)
+fp::par_map_to(pool, src, dst, activate);
+```
+
+`par_for` is how you parallelize a loop that isn't a `map` over one vector —
+row-wise matrix work, tiled kernels, per-cell grid passes. `par_map_to` is
+`par_map` without the allocation: reuse `dst` across iterations and the whole
+pipeline stays allocation-free. As with the other parallel combinators, the
+callback must be safe to run concurrently on disjoint indices; the library
+guarantees each index is visited exactly once.
+
 ```cpp
 fp::ThreadPool pool;                              // hardware_concurrency threads
 auto fut = pool.enqueue([](int a, int b) { return a + b; }, 1, 2);  // future<int>
@@ -255,6 +280,7 @@ fp::Stream<int> both = from_ch.concat(s);   // this stream, then `other`
 | Need | Use |
 |---|---|
 | Parallelize a pure `map`/`for_each`/`reduce` | `ThreadPool` + `par_map`/`par_for_each`/`par_reduce` |
+| Parallelize an index loop or write into an existing buffer | `par_for` / `par_for_each_index` / `par_map_to` |
 | Message passing between threads | `Channel<T>` |
 | Realtime, lock-free single-producer/single-consumer | `RingBuffer<T>` |
 | Stateful worker with a mailbox | `Actor<Msg, State>` |

@@ -1,7 +1,9 @@
 #pragma once
+#include "scope.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <new>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -44,6 +46,27 @@ public:
     return p;
   }
 
+  // Raw bytes, aligned to `align` (clamped to the arena's 64-byte alignment).
+  std::span<std::byte> alloc_bytes(std::size_t n,
+                                   std::size_t align = alignment) {
+    if (align > alignment)
+      align = alignment;
+    if (align == 0)
+      align = 1;
+    if (blocks_.empty() || !fits(align, n))
+      add_block(align, n);
+    auto &b = blocks_.back();
+    std::size_t off = (b.used + align - 1) & ~(align - 1);
+    auto *p = reinterpret_cast<std::byte *>(b.data + off);
+    b.used = off + n;
+    return {p, n};
+  }
+
+  template <class T> std::span<T> alloc_span(std::size_t n = 1) {
+    auto bytes = alloc_bytes(n * sizeof(T), alignof(T));
+    return {reinterpret_cast<T *>(bytes.data()), n};
+  }
+
   void reset() {
     for (auto &b : blocks_)
       b.used = 0;
@@ -54,6 +77,20 @@ public:
     for (auto const &b : blocks_)
       total += b.used;
     return total;
+  }
+
+  // Checkpoint/rollback: `mark` records the current high-water mark, and
+  // `reset_to` rewinds allocations made after it without touching earlier ones.
+  std::size_t mark() const { return used(); }
+
+  void reset_to(std::size_t mark) {
+    std::size_t total = used();
+    for (auto it = blocks_.rbegin(); it != blocks_.rend() && total > mark;
+         ++it) {
+      const std::size_t take = std::min(total - mark, it->used);
+      it->used -= take;
+      total -= take;
+    }
   }
 
 private:
@@ -82,6 +119,14 @@ private:
 
 template <class F> auto with_arena(std::size_t block, F f) {
   Arena a(block);
+  return f(a);
+}
+
+// Scoped use of a long-lived arena: allocations made inside `f` are reclaimed
+// when `f` returns, while everything allocated before stays valid.
+template <class F> auto with_arena_scope(Arena &a, F f) {
+  const std::size_t mark = a.mark();
+  auto guard = defer([&a, mark] { a.reset_to(mark); });
   return f(a);
 }
 

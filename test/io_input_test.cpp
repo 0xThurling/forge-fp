@@ -1,9 +1,11 @@
 #include <fp/all.hpp>
 
 #include <gtest/gtest.h>
+#include <cstddef>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 std::string temp_path(std::string const &name) {
@@ -27,6 +29,34 @@ TEST(Io, WriteReadRoundTrip) {
 TEST(Io, MissingFileIsError) {
   EXPECT_FALSE(fp::read_file(temp_path("does_not_exist_12345.txt")).is_ok());
   EXPECT_FALSE(fp::read_lines(temp_path("does_not_exist_12345.txt")).is_ok());
+  EXPECT_FALSE(fp::read_bytes(temp_path("does_not_exist_12345.bin")).is_ok());
+}
+
+TEST(Io, BytesRoundTrip) {
+  auto path = temp_path("io_bytes.bin");
+  std::vector<std::byte> data = {std::byte{1}, std::byte{2}, std::byte{255}};
+  ASSERT_TRUE(fp::write_bytes(path, data).is_ok());
+
+  auto back = fp::read_bytes(path);
+  ASSERT_TRUE(back.is_ok());
+  EXPECT_EQ(back.value(), data);
+
+  EXPECT_TRUE(fp::exists(path));
+  EXPECT_FALSE(fp::exists(temp_path("nope_12345.bin")));
+}
+
+TEST(Io, WriteLinesAndEnsureDirectory) {
+  auto dir = temp_path("io_dir/sub");
+  ASSERT_TRUE(fp::ensure_directory(dir).is_ok());
+  ASSERT_TRUE(fp::ensure_directory(dir).is_ok()); // idempotent
+
+  auto path = dir + "/lines.txt";
+  ASSERT_TRUE(fp::write_lines(path, {"a", "b"}).is_ok());
+
+  auto lines = fp::read_lines(path);
+  ASSERT_TRUE(lines.is_ok());
+  EXPECT_EQ(lines.value(), (std::vector<std::string>{"a", "b"}));
+  EXPECT_TRUE(fp::exists(path));
 }
 
 TEST(Io, LiftAndInteract) {

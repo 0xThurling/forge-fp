@@ -15,17 +15,26 @@ opt-in `simd.hpp` and `macros.hpp`.
 | [Getting started](getting-started.md) | `fp/all.hpp` | building, including, first program, conventions |
 | [ADTs: `Either` / `Result` / `Maybe` / `Validation`](adts.md) | `either.hpp`, `result.hpp`, `maybe.hpp`, `validation.hpp` | the four error/optionality types and their combinators |
 | [Structured errors](adts.md#outcomet--structured-errors-with-codes-and-context) | `error.hpp` | `Error` / `Outcome<T>`: codes, context chains, source locations |
-| [Collections](collections.md) | `vec.hpp`, `ranges.hpp`, `views.hpp` | `map`/`filter`/`fold`/`zip`/… over vectors and ranges, lazy `fp::views` |
-| [Maps & grids](maps-grids.md) | `map.hpp`, `grid.hpp` | associative-container helpers, 2D/3D grids |
-| [Strings](strings.md) | `string.hpp` | `split`/`join`/`trim`/parsing/… in `fp::str` |
+| [Collections](collections.md) | `vec.hpp`, `ranges.hpp`, `views.hpp` | `map`/`filter`/`fold`/`zip`/… over vectors and ranges, lazy `fp::views` (incl. `chunk`/`slide`/`stride`/`zip_with`/`zip3`) |
+| [Iteration & in-place](inplace.md) | `inplace.hpp` | `for_each`, `transform_inplace`, `map_to`, `sort_inplace`, `remove_if_inplace`, … — the allocation-free counterparts of the eager combinators |
+| [Maps & grids](maps-grids.md) | `map.hpp`, `grid.hpp` | associative-container helpers, 2D/3D grids, indexed/patch mapping |
+| [Strings](strings.md) | `string.hpp` | `split`/`join`/`trim`/parsing/`to_string`/… in `fp::str` |
 | [Parsing](parsing.md) | `parse.hpp` | parser combinators |
-| [File I/O](io.md) | `io.hpp` | `read_file` / `read_lines` / `write_file` |
+| [File I/O](io.md) | `io.hpp` | `read_file` / `read_lines` / `write_file`, plus bytes, line writing, directories |
 | [Input](input.md) | `input.hpp` | reading stdin/streams as `Result`/`Stream`/`Channel` |
 | [Printing](print.md) | `print.hpp` | `operator<<` for the ADTs |
-| [Concurrency](concurrency.md) | `concurrent.hpp`, `task.hpp`, `stream.hpp` | thread pool, channels, actors, futures, cancellation, `Stream` |
-| [Memory](memory.md) | `arena.hpp` | the bump allocator |
-| [SIMD](simd.md) | `simd.hpp` | vectorized `map`/`reduce`/`dot`/math |
-| [Function composition](composition.md) | `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp` | pipes, currying, named operators |
+| [Concurrency](concurrency.md) | `concurrent.hpp`, `task.hpp`, `stream.hpp` | thread pool, channels, actors, futures, cancellation, `Stream`, `par_for`/`par_map_to` |
+| [Memory & ownership](memory.md) | `memory.hpp`, `arena.hpp` | `Buffer`/`Box`/`Shared`, move/ptr/ref, scoped allocation, the bump allocator |
+| [Scopes](scope.md) | `scope.hpp` | `defer`, `scope_exit`, `scope_success`, `scope_fail` — RAII as a value |
+| [Numerics](numerics.md) | `numerics.hpp` | `softmax`/`log_softmax`/`logsumexp`/`sigmoid`, `linspace`/`arange`, `approx_equal`, `central_difference` |
+| [Linear algebra](linalg.md) | `linalg.hpp` | `matmul`/`matvec`/`solve`, norms, `argmax`, `mean`/`variance`, row/column reductions |
+| [Random](random.md) | `random.hpp` | seedable `Rng`, sampling, shuffling, weighted choice |
+| [Time](time.md) | `time.hpp` | `now_seconds`, `elapsed_seconds`, `Stopwatch` |
+| [Serialization](serialization.md) | `serialize.hpp` | generic text/binary round-trip for numeric ranges |
+| [Autodiff](autodiff.md) | `autodiff.hpp` | forward-mode `Dual<T>`, `derivative` *(opt-in)* |
+| [SIMD](simd.md) | `simd.hpp` | vectorized `map`/`reduce`/`dot`/math, `axpy_inplace` |
+| GPU (SYCL) | `gpu.hpp` | device buffers + kernels (`map_to`, `axpy`, `softmax_rows`, chunked `reduce`/`dot`) with a CPU fallback — see [`GPU.md`](../GPU.md) *(opt-in, phase 0/1)* |
+| [Function composition](composition.md) | `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp` | pipes, currying, named operators (incl. `abs`/`sqrt`/`exp`/`log`/`min_`/`max_`/`pow`/`clamp`) |
 | [Pattern matching](pattern-matching.md) | `adt.hpp` | `match`, `case_`, `cond`, `when`, `otherwise` |
 | [Macros](macros.md) | `macros.hpp` | `FP_TRY` |
 
@@ -72,11 +81,14 @@ Three recurring shapes dominate the library:
 | Header | Namespace | Opt-in? |
 |---|---|---|
 | `adt.hpp`, `either.hpp`, `result.hpp`, `maybe.hpp`, `validation.hpp` | `fp` | no |
-| `vec.hpp`, `ranges.hpp`, `map.hpp`, `grid.hpp` | `fp` | no |
+| `vec.hpp`, `ranges.hpp`, `views.hpp`, `inplace.hpp`, `map.hpp`, `grid.hpp` | `fp` | no |
 | `string.hpp` | `fp::str` | no |
-| `parse.hpp`, `io.hpp`, `input.hpp`, `arena.hpp`, `stream.hpp` | `fp` | no |
+| `parse.hpp`, `io.hpp`, `input.hpp`, `memory.hpp`, `arena.hpp`, `scope.hpp`, `serialize.hpp`, `stream.hpp` | `fp` | no |
+| `numerics.hpp`, `linalg.hpp`, `random.hpp`, `time.hpp` | `fp` | no |
 | `compose.hpp`, `curry.hpp`, `combinators.hpp`, `ops.hpp`, `memoize.hpp` | `fp` | no |
-| `concurrent.hpp` | `fp` | no |
+| `concurrent.hpp`, `task.hpp` | `fp` | no |
+| `print.hpp` | `fp` | no — included by `all.hpp` |
 | `simd.hpp` | `fp` | yes — `#include` it explicitly (not in `all.hpp`) |
+| `gpu.hpp` | `fp::gpu` | yes — `#include` it explicitly (not in `all.hpp`); CPU fallback built in |
+| `autodiff.hpp` | `fp`, `fp::ad` | yes — `#include` it explicitly (not in `all.hpp`) |
 | `macros.hpp` | (macros) | yes — `#include` it explicitly (not in `all.hpp`) |
-| `print.hpp` | `fp` | yes — `#include` it explicitly (not in `all.hpp`) |

@@ -245,11 +245,17 @@ fp::to_vector(r);    // {20, 40, 60} — nothing ran until here
 |---|---|
 | `map(f)`, `filter(p)`, `take(n)`, `drop(n)` | std adaptors; work with `\|` |
 | `take_while(p)`, `drop_while(p)` | prefix adaptors |
-| `reverse`, `join` | std adaptors |
+| `reverse`, `join`, `iota(a, b)` | std adaptors; `iota` is the lazy integer range |
 | `filter_map(f)` | `f` returns `optional`; present values kept |
 | `flat_map(f)` | map to a range, then flatten |
 | `enumerate(r)` / `enumerate()` | index + element (random-access ranges) |
 | `zip(a, b)` / `zip(b)` | truncating pair-ups (random-access ranges) |
+| `chunk(n)` | non-overlapping groups of `n` (each a subrange view) |
+| `slide(n)` | overlapping windows of `n` |
+| `stride(n)` | every `n`-th element |
+| `take_last(n)` | the last `n` elements |
+| `zip_with(other, f)` | fused zip + transform (no pair vector) |
+| `zip3(a, b, c)` | three-way zip into tuples |
 
 Views are **lazy and borrowing**:
 
@@ -270,5 +276,35 @@ fp::to_vector(squares);   // {1, 4, 9, 16, 25}
 fp::views::zip(std::vector<int>{1, 2}, std::vector<std::string>{"a", "b"});
 ```
 
-Rule of thumb: reach for `fp::` when you want a materialized result, and
-`fp::views::` when you want to compose passes without intermediates.
+The windowing adaptors are lazy subrange views — nothing is copied until you
+materialize:
+
+```cpp
+std::vector<int> v = {1, 2, 3, 4, 5};
+
+for (auto part : v | fp::views::chunk(2))     // {1,2}, {3,4}, {5}
+    use(part);                                 // `part` is a subrange view
+
+for (auto w : v | fp::views::slide(3))         // {1,2,3}, {2,3,4}, {3,4,5}
+    use(w);
+
+fp::to_vector(v | fp::views::stride(2));       // {1, 3, 5}
+fp::to_vector(fp::views::take_last(v, 2));     // {4, 5}
+
+// fused zip + map: no intermediate pair vector
+auto sums = fp::out(fp::into(a) | fp::views::zip_with(b, [](int x, int y) {
+                      return x + y;
+                    }));
+
+// three-way zip into tuples
+for (auto [x, y, z] : fp::views::zip3(a, b, c)) { /* ... */ }
+```
+
+All the new adaptors are *pipe closures*: they work both as
+`fp::views::chunk(v, n)` and as `v | fp::views::chunk(n)` (or
+`fp::into(v) | fp::views::chunk(n)`), and they own the range when it is an
+rvalue — so `fp::out(fp::into(std::move(v)) | fp::views::slide(4))` is safe.
+
+Rule of thumb: reach for `fp::` when you want a materialized result,
+`fp::views::` when you want to compose passes without intermediates, and
+[`inplace.hpp`](inplace.md) when you want to mutate without allocating at all.

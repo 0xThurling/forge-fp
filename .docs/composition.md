@@ -187,6 +187,9 @@ Full list:
 | comparison | `eq`, `ne`, `lt`, `le`, `gt`, `ge` |
 | logic | `and_`, `or_`, `not_` |
 | unary | `negate`, `increment`, `decrement` |
+| elementwise math | `abs`, `sqrt`, `exp`, `log`, `log1p`, `sign` |
+| min/max | `min_`, `max_` (captured value is the right operand) |
+| parameterized | `pow(k)`, `clamp(lo, hi)` |
 
 **Why named operators over lambdas:** `fp::plus(1)` is a *value* with a name —
 it autocompletes, refactors, and reads as a sentence. A lambda
@@ -208,6 +211,38 @@ fp::filter(v, fp::gt(0));          // keep x where x > 0
 fp::fold_left(v, 0, fp::plus);     // sum
 fp::map(v, fp::negate);            // flip signs
 ```
+
+### Elementwise math operators
+
+The math functions are named values, so point-free pipelines stay readable:
+
+```cpp
+fp::map(v, fp::abs);              // |x|
+fp::map(v, fp::sqrt);             // sqrt(x)
+fp::map(v, fp::exp);              // e^x
+fp::map(v, fp::log);              // ln(x)
+fp::map(v, fp::sign);             // -1 / 0 / +1
+```
+
+`min_`/`max_` follow the comparison convention — the captured value is the
+right operand, so `max_(0)` is the ReLU-shaped "at least zero":
+
+```cpp
+fp::map(v, fp::max_(0.0));        // max(x, 0)
+fp::map(v, fp::min_(1.0));        // min(x, 1)
+```
+
+`pow(k)` and `clamp(lo, hi)` are curried parameterized operators:
+
+```cpp
+fp::map(v, fp::pow(2));           // x^2
+fp::map(v, fp::clamp(0.0, 1.0));  // clip to [0, 1]
+```
+
+`abs` handles unsigned types without a signedness warning. For the full
+stable probability functions (`softmax`, `sigmoid`, `logsumexp`), see
+[numerics](numerics.md); for elementwise functions on whole SIMD vectors, see
+[simd](simd.md).
 
 ## `memoize`
 

@@ -1,26 +1,22 @@
 # Pattern matching — `adt.hpp`
 
-`adt.hpp` gives you exhaustive, O(1) dispatch over `std::variant`, plus ordered
-guards, and `match` overloads for `std::optional` and `Result`.
+`adt.hpp` gives you exhaustive, compiler-checked dispatch over `std::variant`,
+ordered guards over predicates, and `match` overloads for the wrapper types
+(`optional`, `Result`, `Either`, `Validation`, `Outcome`).
 
 ```cpp
 #include <fp/adt.hpp>
 ```
 
-## Why `match` instead of `if (holds_alternative(...))`
+## Two different tools (don't confuse them)
 
-Extracting a value from `std::variant` without help means either `std::visit`
-(with a hand-written visitor) or a chain of `holds_alternative` + `get` — both
-easy to get wrong, and the compiler can't check you've covered every case.
-`match` fixes both:
+| Tool | Question | Checked by |
+|---|---|---|
+| `match(v, case_<T>(f), …)` | "which *type* is in this variant?" | the compiler: every alternative must be covered |
+| `cond(v, when(p, f), …, otherwise(f))` | "which *predicate* matches first?" | you: ordered, first match wins, not exhaustive |
 
-- **Exhaustive, by the compiler.** Miss an alternative and it won't compile —
-  add a variant to the type and every `match` over it breaks until you cover it.
-- **O(1).** Dispatch is a jump on the variant index, not a linear `if` chain.
-
-`cond` is the *different* tool: an ordered, first-match-wins predicate chain.
-The names are deliberately separate so you never confuse "exhaustive over
-types" (`match`) with "ordered over predicates" (`cond`).
+The names are deliberately separate so the two mental models never blur.
+`match` is about **shape** (types); `cond` is about **order** (predicates).
 
 ## `match` + `case_` — exhaustive variant dispatch
 
@@ -31,53 +27,81 @@ struct Circle { double radius; };
 struct Rect   { double w, h; };
 using Shape = std::variant<Circle, Rect>;
 
-Shape s = Circle{2.0};
-
-double area = fp::match(s,
-    fp::case_<Circle>([](auto c) { return 3.14159 * c.radius * c.radius; }),
-    fp::case_<Rect>  ([](auto r) { return r.w * r.h; }));
+double area(Shape const &s) {
+  return fp::match(s,
+      fp::case_<Circle>([](Circle const &c) { return 3.14159 * c.radius * c.radius; }),
+      fp::case_<Rect>  ([](Rect const &r)   { return r.w * r.h; }));
+}
 ```
 
-- `match(variant, arms...)` is a `std::visit` wrapper — the compiler *checks*
-  that every alternative is covered (missing one = compile error).
-- `case_<T>(f)` binds an arm to alternative type `T` and gives it a name to
-  write `f(c)` instead of `[](Circle const& c){...}`.
+- `match(variant, arms…)` is a `std::visit` wrapper. Miss an alternative and
+  it is a **compile error** — add a type to `Shape` and every `match` over it
+  breaks until it is handled.
+- `case_<T>(f)` binds an arm to alternative `T`; `f` receives `T const&`.
+  Writing `case_<Circle>` instead of `[](Circle const&)` is what lets the
+  compiler point at the *arm* rather than at a generic lambda.
+- Dispatch is **O(1)**: a jump on the variant's index, not a linear chain of
+  `holds_alternative` tests.
 
-## `overload` — a callable combining several lambdas
+### Why not `std::visit` directly?
 
-`match` is built on `overload`, which you can use directly:
+You can, and `match` is built on it — but a hand-written visitor needs
+`overload` boilerplate, and the compiler's "no matching call" error for a
+missing alternative is far less clear than "no match for `case_<Circle>`".
 
 ```cpp
-auto visitor = fp::overload{
-    [](Circle const& c) { return c.radius; },
-    [](Rect const& r)   { return r.w * r.h; },
-};
-std::visit(visitor, s);
+// equivalent, more ceremony:
+std::visit(fp::overload{
+    [](Circle const &c) { return c.radius; },
+    [](Rect const &r)   { return r.w * r.h; },
+}, s);
 ```
 
-## `match` for `std::optional` and the Either family
+### `overload` on its own
 
-The variant `match` above is constrained to `std::variant`s; the ADTs get their
-own overloads (arm order: success arm first, failure arm second).
+`fp::overload{...}` is just a callable that inherits from each lambda, so it is
+useful anywhere a visitor is expected:
+
+```cpp
+auto describe = fp::overload{
+    [](int x)                { return "int " + std::to_string(x); },
+    [](std::string const &s) { return "string " + s; },
+};
+std::visit(describe, value);
+```
+
+## `match` for the wrapper types
+
+The ADT overloads take **two** arms: success first, failure second.
 
 ```cpp
 // optional: some(T) / none()
-std::string s = fp::match(std::optional<int>{3},
+std::string label = fp::match(std::optional<int>{3},
     [](int x) { return "got " + std::to_string(x); },
-    []       { return std::string("nothing"); });
+    []        { return std::string("nothing"); });
 
-// Result / Either / Validation: ok_f(T) / err_f(error)
-auto msg = fp::match(fp::err<int>("boom"),
-    [](int x)              { return "ok"; },
-    [](std::string const&) { return "failed"; });
+// Result / Either / Validation / Outcome: ok_f(T) / err_f(error)
+auto message = fp::match(fp::err<int>("boom"),
+    [](int)                { return "ok"; },
+    [](std::string const &) { return "failed"; });
 
-// Result<void>: the ok arm takes no arguments
-auto n = fp::match(fp::ok<void>(), [] { return 1; }, [](std::string const&) { return 0; });
+// Result<void>: the success arm takes no arguments
+auto code = fp::match(fp::ok<void>(),
+    []                     { return 0; },
+    [](std::string const &) { return 1; });
+```
+
+Both arms must return the **same type** (or both `void`), because `match`
+returns a value:
+
+```cpp
+auto n = fp::match(fp::ok(2), [](int x) { return x; }, [](std::string const &) { return -1; });
+// n == 2
 ```
 
 ## `cond` / `when` / `otherwise` — ordered guards
 
-When you need first-match-wins *predicates* (not exhaustive types), use `cond`:
+When the question is a predicate chain rather than a type, use `cond`:
 
 ```cpp
 std::string kind = fp::cond(x,
@@ -86,32 +110,96 @@ std::string kind = fp::cond(x,
     fp::otherwise([](auto)      { return "zero"; }));
 ```
 
-- `when(pred, f)` — arm taken only if `pred(v)`.
-- `otherwise(f)` — catch-all, always matches.
-- `cond(v, arms...)` — evaluates arms in order, first match wins; throws if none
-  match (so end with `otherwise`).
+- `when(pred, f)` — arm taken only if `pred(value)` is true.
+- `otherwise(f)` — catch-all; always matches.
+- Arms are evaluated **in order**; the first match wins. `cond` is a linear
+  scan, not a jump — that is the price of arbitrary predicates.
+- Without `otherwise`, `cond` throws `std::runtime_error("cond: no arm
+  matched")` if nothing matches. End with `otherwise` unless the throw is
+  genuinely a bug path.
 
-Every arm receives the value. Unlike `match`, `cond` is a *linear scan* and is
-*not* exhaustive — that's the trade for being able to ask arbitrary predicates.
+Predicates compose with `fp::ops`, which makes the guards read as sentences:
+
+```cpp
+auto grade = fp::cond(score,
+    fp::when(fp::ge(90), fp::const_("A")),
+    fp::when(fp::ge(80), fp::const_("B")),
+    fp::when(fp::ge(70), fp::const_("C")),
+    fp::otherwise(fp::const_("F")));
+```
+
+Every arm receives the value, so `fp::const_("A")` (a function ignoring its
+argument) is the natural fit when the result does not depend on it.
+
+## Worked example: an expression tree
+
+Variants nest naturally; `match` handles the recursion:
+
+```cpp
+struct Num { double value; };
+struct Add;
+struct Mul;
+using Expr = std::variant<Num, Add, Mul>;
+
+struct Add { std::shared_ptr<Expr> lhs, rhs; };
+struct Mul { std::shared_ptr<Expr> lhs, rhs; };
+
+double evaluate(Expr const &e) {
+  return fp::match(e,
+      fp::case_<Num>([](Num const &n) { return n.value; }),
+      fp::case_<Add>([&](Add const &a) {
+        return evaluate(*a.lhs) + evaluate(*a.rhs);
+      }),
+      fp::case_<Mul>([&](Mul const &m) {
+        return evaluate(*m.lhs) * evaluate(*m.rhs);
+      }));
+}
+```
+
+Adding a `Div` alternative makes this function fail to compile until it is
+handled — exactly what you want from a tree walk.
 
 ## `value_or` and `unpack`
 
 ```cpp
 fp::value_or(std::optional<int>{}, 42);          // 42
+fp::value_or(fp::err<int>("x"), 0);              // 0
+fp::value_or(fp::ok(7), 0);                      // 7
 
 // unpack: call a binary function on a pair's elements
 auto add = fp::unpack([](int a, int b) { return a + b; });
-fp::map(fp::zip(as, bs), add);
+fp::map(fp::zip(as, bs), add);                   // {a0+b0, a1+b1, …}
 ```
 
-## Summary
+`value_or` is the "collapse the wrapper to a plain value" escape hatch; prefer
+`match`/`and_then` when the two cases deserve different behaviour.
 
-| Tool | Use for |
+## Which tool when
+
+| Situation | Tool |
 |---|---|
-| `match(variant, case_<T>(f)...)` | exhaustive, O(1) dispatch |
-| `match(optional, some, none)` | optionals |
-| `match(either, ok_f, err_f)` | `Result` / `Either` / `Validation` (incl. `void`) |
-| `cond(v, when(p,f)..., otherwise(f))` | ordered, first-match guards |
-| `overload{...}` | build a visitor by hand |
-| `unpack(f)` | call `f(a, b)` on a pair |
-| `value_or(opt, fallback)` / `value_or(result, fallback)` | default an optional/result |
+| `std::variant` with a fixed set of alternatives | `match` + `case_` |
+| A visitor you want to name and reuse | `overload` |
+| `optional` / `Result` / `Either` / `Validation` | `match` (two arms) |
+| Ordered predicate guards | `cond` + `when` / `otherwise` |
+| A default value, no branching | `value_or` |
+| A pair as two arguments | `unpack` |
+
+## Gotchas
+
+- **Arms must agree on the return type.** `match` returns a value; all arms
+  must return the same type (or all `void`). If you need different types per
+  arm, wrap them in a common variant or return `void` and act inside.
+- **`case_<T>` must name the exact alternative type.** `case_<Circle>` matches
+  `Circle`; it does not match a type convertible to it.
+- **`match` on an `optional`/`Result` is by value.** The arms receive the
+  contained value; if you need to mutate, capture by reference and return a
+  reference-free type.
+- **`cond` is not exhaustive.** Forgetting `otherwise` is legal and only
+  surfaces at runtime as a throw. Make it a habit to end with `otherwise`.
+- **`cond` arms see the value, not the index.** Predicates that need the index
+  should use `fp::enumerate` first.
+- **Don't use `match` for predicates.** A `cond` over `if/else` is clearer than
+  a one-arm `match` with `std::monostate`.
+- **`variant` alternatives should be distinct.** Two identical alternatives
+  make `case_` ambiguous; use distinct wrapper types.

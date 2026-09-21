@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fp::str {
@@ -247,5 +250,57 @@ inline bool starts_with(std::string const &s, std::string const &prefix) {
 inline bool ends_with(std::string const &s, std::string const &suffix) {
   return s.size() >= suffix.size() &&
          s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+// Precision-controlled formatting: to_string(v, 17) round-trips a double.
+inline std::string to_string(double value, int precision = 17) {
+  std::ostringstream os;
+  os << std::setprecision(precision) << value;
+  return os.str();
+}
+
+inline std::string to_string(int value) { return std::to_string(value); }
+
+// Splits on any character in `delims`; runs of delimiters collapse and empty
+// fields are dropped.
+inline std::vector<std::string> split_any(std::string const &s,
+                                          std::string const &delims) {
+  std::vector<std::string> out;
+  std::string current;
+  for (char c : s) {
+    if (delims.find(c) != std::string::npos) {
+      if (!current.empty())
+        out.push_back(std::move(current));
+      current.clear();
+    } else {
+      current.push_back(c);
+    }
+  }
+  if (!current.empty())
+    out.push_back(std::move(current));
+  return out;
+}
+
+namespace detail {
+
+template <class T> Result<T> parse_number(std::string const &s) {
+  if constexpr (std::is_integral_v<T>)
+    return fp::map(to_int(s), [](int v) { return static_cast<T>(v); });
+  else
+    return fp::map(to_double(s), [](double v) { return static_cast<T>(v); });
+}
+
+} // namespace detail
+
+// Parses whitespace/comma separated numbers; reports the offending token.
+template <class T> Result<std::vector<T>> parse_numbers(std::string const &s) {
+  std::vector<T> out;
+  for (auto const &token : split_any(s, " \t\n\r,")) {
+    auto parsed = detail::parse_number<T>(token);
+    if (!parsed.is_ok())
+      return err<std::vector<T>>("not a number: '" + token + "'");
+    out.push_back(parsed.value());
+  }
+  return ok(std::move(out));
 }
 } // namespace fp::str

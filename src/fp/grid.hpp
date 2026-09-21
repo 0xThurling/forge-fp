@@ -93,4 +93,62 @@ auto map3d(std::vector<std::vector<std::vector<T>>> const &g, F f) {
   }
   return out;
 }
+// --- 2-D helpers ------------------------------------------------------------
+
+// f(i, j, x) -> y: index-aware mapping for bias add, masks, positional terms.
+template <class T, class F>
+auto map2d_indexed(std::vector<std::vector<T>> const &g, F f) {
+  using R = std::invoke_result_t<F, std::size_t, std::size_t, T>;
+  std::vector<std::vector<R>> out;
+  out.reserve(g.size());
+  for (std::size_t i = 0; i < g.size(); ++i) {
+    std::vector<R> row;
+    row.reserve(g[i].size());
+    for (std::size_t j = 0; j < g[i].size(); ++j)
+      row.push_back(f(i, j, g[i][j]));
+    out.push_back(std::move(row));
+  }
+  return out;
+}
+
+// In-place map2d.
+template <class T, class F>
+void map2d_inplace(std::vector<std::vector<T>> &g, F f) {
+  for (auto &row : g)
+    for (auto &x : row)
+      x = f(x);
+}
+
+// Column j as a vector (copies; columns are strided).
+template <class T>
+std::vector<T> column(std::vector<std::vector<T>> const &g, std::size_t j) {
+  std::vector<T> out;
+  out.reserve(g.size());
+  for (auto const &row : g)
+    out.push_back(row[j]);
+  return out;
+}
+
+// Non-overlapping kh x kw patches in row-major order. Each patch is a kh x kw
+// grid; incomplete edges are dropped.
+template <class T>
+auto windows2d(std::vector<std::vector<T>> const &g, std::size_t kh,
+               std::size_t kw) {
+  std::vector<std::vector<std::vector<T>>> out;
+  if (g.empty() || kh == 0 || kw == 0)
+    return out;
+  const std::size_t height = g.size();
+  const std::size_t width = g[0].size();
+  for (std::size_t i = 0; i + kh <= height; i += kh) {
+    for (std::size_t j = 0; j + kw <= width; j += kw) {
+      std::vector<std::vector<T>> patch(kh, std::vector<T>(kw));
+      for (std::size_t r = 0; r < kh; ++r)
+        for (std::size_t c = 0; c < kw; ++c)
+          patch[r][c] = g[i + r][j + c];
+      out.push_back(std::move(patch));
+    }
+  }
+  return out;
+}
+
 } // namespace fp

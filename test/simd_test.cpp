@@ -82,4 +82,21 @@ TEST(Simd, ParMapInplace) {
   EXPECT_EQ(v[999], 1998);
 }
 
+TEST(Simd, AxpyInplace) {
+  std::vector<float> y(100, 1.0f);
+  std::vector<float> x(100);
+  std::iota(x.begin(), x.end(), 1.0f);
+
+  fp::axpy_inplace(y, 2.0f, x);
+  EXPECT_FLOAT_EQ(y[0], 3.0f);
+  EXPECT_FLOAT_EQ(y[99], 1.0f + 2.0f * 100.0f);
+
+  // Tail handling: a size that is not a multiple of the lane width.
+  std::vector<double> y2(7, 1.0);
+  std::vector<double> x2(7, 2.0);
+  fp::axpy_inplace(y2, 0.5, x2);
+  for (double v : y2)
+    EXPECT_DOUBLE_EQ(v, 2.0);
+}
+
 #endif // __has_include(<experimental/simd>)

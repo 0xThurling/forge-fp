@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -403,6 +404,59 @@ void par_for_each(ThreadPool &pool, std::vector<T> const &v, F f) {
     futs.push_back(pool.enqueue([&v, f, s, e] {
       for (size_t i = s; i < e; ++i)
         f(v[i]);
+    }));
+  }
+  for (auto &fut : futs)
+    fut.get();
+}
+
+// f(i) for i in [begin, end), split across the pool. The tiling primitive for
+// index-based work (tiled matmul, per-row transforms).
+template <class F>
+void par_for(ThreadPool &pool, std::size_t begin, std::size_t end, F f) {
+  if (begin >= end)
+    return;
+  const std::size_t n = end - begin;
+  const std::size_t threads = std::max<std::size_t>(1, pool.size());
+  const std::size_t chunk = (n + threads - 1) / threads;
+  std::vector<std::future<void>> futs;
+  futs.reserve((n + chunk - 1) / chunk);
+  for (std::size_t s = begin; s < end; s += chunk) {
+    const std::size_t e = std::min(end, s + chunk);
+    futs.push_back(pool.enqueue([&f, s, e] {
+      for (std::size_t i = s; i < e; ++i)
+        f(i);
+    }));
+  }
+  for (auto &fut : futs)
+    fut.get();
+}
+
+// f(i, v[i]) across the pool.
+template <class T, class F>
+void par_for_each_index(ThreadPool &pool, std::vector<T> const &v, F f) {
+  par_for(pool, 0, v.size(),
+          [&v, f](std::size_t i) { f(i, v[i]); });
+}
+
+// Writes f(src[i]) into dst[i]. `dst` must be at least as large as `src`
+// (asserted); no result vector is allocated.
+template <class T, class R, class F>
+void par_map_to(ThreadPool &pool, std::vector<T> const &src,
+                std::vector<R> &dst, F f) {
+  assert(dst.size() >= src.size());
+  const std::size_t n = src.size();
+  if (n == 0)
+    return;
+  const std::size_t threads = std::max<std::size_t>(1, pool.size());
+  const std::size_t chunk = (n + threads - 1) / threads;
+  std::vector<std::future<void>> futs;
+  futs.reserve((n + chunk - 1) / chunk);
+  for (std::size_t s = 0; s < n; s += chunk) {
+    const std::size_t e = std::min(n, s + chunk);
+    futs.push_back(pool.enqueue([&src, &dst, f, s, e] {
+      for (std::size_t i = s; i < e; ++i)
+        dst[i] = f(src[i]);
     }));
   }
   for (auto &fut : futs)

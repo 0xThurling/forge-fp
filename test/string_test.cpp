@@ -69,3 +69,29 @@ TEST(String, Affixes) {
   EXPECT_TRUE(ends_with("foobar", "bar"));
   EXPECT_FALSE(ends_with("foobar", "foo"));
 }
+
+TEST(String, PrecisionToString) {
+  const double v = 0.1 + 0.2;
+  EXPECT_DOUBLE_EQ(std::stod(to_string(v, 17)), v);
+  EXPECT_EQ(to_string(42), "42");
+}
+
+TEST(String, SplitAny) {
+  EXPECT_EQ(split_any("a, b;;c\t d", ",;\t "),
+            (std::vector<std::string>{"a", "b", "c", "d"}));
+  EXPECT_TRUE(split_any("  ,,  ", ", ").empty());
+}
+
+TEST(String, ParseNumberList) {
+  auto xs = parse_numbers<double>("1, 2.5  3");
+  ASSERT_TRUE(xs.is_ok());
+  EXPECT_EQ(xs.value(), (std::vector<double>{1.0, 2.5, 3.0}));
+
+  auto is = parse_numbers<int>("1 2 3");
+  ASSERT_TRUE(is.is_ok());
+  EXPECT_EQ(is.value(), (std::vector<int>{1, 2, 3}));
+
+  auto bad = parse_numbers<double>("1 x 3");
+  EXPECT_FALSE(bad.is_ok());
+  EXPECT_NE(bad.error().find('x'), std::string::npos);
+}

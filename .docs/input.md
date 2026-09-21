@@ -1,13 +1,19 @@
 # Input — `input.hpp`
 
-Reading from an input stream — lines or single characters — as `Result`,
-`Stream`, or a `Channel` producer. The default source is `std::cin`, but every
-function takes an `std::istream&` so you can read from a file, a
+Reading from an input stream — lines, whole input, or single characters — as
+`Result`, `Stream`, or a `Channel` producer. The default source is `std::cin`,
+but every function takes an `std::istream&` so you can read from a file, a
 `std::istringstream`, or any other stream.
 
 ```cpp
 #include <fp/input.hpp>
 ```
+
+**Why this exists:** stream extraction returns the stream, and failure hides in
+flags (`eof()`, `fail()`) that are easy to ignore. Input here returns `Result`
+(the value or an error), `Stream` (lazy transformable), or pushes into a
+`Channel` (decoupled producer) — the same three shapes the rest of the library
+uses, so input composes with the error channel instead of interrupting it.
 
 ## The functions
 
@@ -31,13 +37,20 @@ function takes an `std::istream&` so you can read from a file, a
 int main() {
     std::cout << "name: ";
     auto name = fp::read_line();          // Result<std::string>
-    if (!name.is_ok()) return 1;          // "end of input" at EOF
+    if (!name.is_ok())
+        return 1;                          // "end of input" at EOF
     std::cout << "hello, " << name.value() << "\n";
 }
 ```
 
 `read_line` returns a `Result` so EOF / stream failure is a value you handle,
-not an unchecked stream flag.
+not an unchecked stream flag. `read_all` reads to EOF in one call:
+
+```cpp
+auto source = fp::read_all();            // Result<std::string>
+if (source.is_ok())
+    std::cout << "read " << source.value().size() << " bytes\n";
+```
 
 ## Streaming lines lazily
 
@@ -45,35 +58,60 @@ not an unchecked stream flag.
 `subscribe` as the lines arrive — no need to read the whole input first:
 
 ```cpp
-auto total = 0;
-fp::read_lines()
-    .map([](std::string const& s) { return fp::str::to_int(s); })   // not optional — use a lambda
-    .subscribe([](auto) { /* ... */ });
-```
-
-Better: parse and skip the bad lines with a plain subscribe loop, or compose
-with `filter_map` after collecting. The point is the same `map`/`filter`
-vocabulary you already know, applied to input.
-
-```cpp
 // sum every line that parses as a number
 long long total = 0;
-fp::read_lines().subscribe([&](std::string const& line) {
+fp::read_lines().subscribe([&](std::string const &line) {
     if (auto r = fp::str::to_int(line); r.is_ok())
         total += r.value();
 });
 ```
 
-## Producer/consumer
+The stream is **pull-based**: each line is read when the subscriber asks for
+it. That makes it suitable for pipes and large files:
+
+```cpp
+fp::read_lines(in)
+    .filter([](std::string const &line) { return !line.empty(); })
+    .take(10)
+    .subscribe([](std::string const &line) { std::cout << line << "\n"; });
+```
+
+## Single characters
+
+`read_char` reads one character; `read_chars` streams them:
+
+```cpp
+auto c = fp::read_char();                        // Result<char>
+
+// count vowels in a stream
+int vowels = 0;
+fp::read_chars().subscribe([&](char c) {
+    if (std::string("aeiou").find(c) != std::string::npos)
+        ++vowels;
+});
+```
+
+## Producer/consumer with `Channel`
 
 `feed_lines` is the producer side: it reads lines and pushes them into a
 `Channel<std::string>`. Run it in a thread while a consumer drains the channel:
 
 ```cpp
-fp::Channel<std::string> ch;
-std::thread producer([&] { fp::feed_lines(ch); });   // reads stdin -> channel
-// consume on the main thread, or another worker
+fp::Channel<std::string> ch(64);                     // bounded -> backpressure
+std::thread producer([&] { fp::feed_lines(ch); });   // stdin -> channel
+
+for (;;) {
+    auto line = ch.try_recv();
+    if (!line)
+        break;                                       // channel closed + drained
+    process(*line);
+}
+producer.join();
 ```
+
+The bounded channel is the point: a fast producer cannot outrun a slow consumer
+without bound. For the lock-free single-producer/single-consumer variant, see
+[`RingBuffer`](concurrency.md#ringbuffert--lock-free-spsc).
 
 ## Single keys (TUI / game style)
 
@@ -83,24 +121,28 @@ provide `raw_mode` + `read_key`:
 
 ```cpp
 #if defined(__unix__) || defined(__APPLE__)
+#include <fp/scope.hpp>            // fp::defer
 int main() {
     fp::raw_mode(true);
+    auto restore = fp::defer([] { fp::raw_mode(false); });   // always restore
+
     while (true) {
         auto key = fp::read_key();
-        if (!key.is_ok() || key.value() == 'q') break;
+        if (!key.is_ok() || key.value() == 'q')
+            break;
         std::cout << "pressed " << key.value() << "\n";
     }
-    fp::raw_mode(false);
 }
 #endif
 ```
 
 `raw_mode(true)` disables echo and line buffering; `raw_mode(false)` restores
-the terminal. These are POSIX-only (the `<termios.h>`/`<unistd.h>` path is
-guarded), so a portable program should use `read_char` and reserve `read_key`
-for POSIX targets.
+the terminal. Pairing it with [`fp::defer`](scope.md) guarantees the restore
+even on an early exit or exception. These are POSIX-only (the
+`<termios.h>`/`<unistd.h>` path is guarded), so a portable program should use
+`read_char` and reserve `read_key` for POSIX targets.
 
-## Notes
+## Gotchas
 
 - **The stream must outlive the returned `Stream`.** `read_lines(in)`/`read_chars(in)`
   capture `&in`; with the default `std::cin` that's fine (it's a global), but
@@ -109,3 +151,9 @@ for POSIX targets.
   `send` throw). Run it in its own thread for a live producer.
 - **Errors are strings**, consistent with the rest of the library: `"end of
   input"` at EOF, `"input error"` on stream failure.
+- **A `Stream` is one-pass.** It pulls from the underlying stream; iterating it
+  twice does not rewind. Collect with `fp::to_vector` if you need to re-read.
+- **`raw_mode` is global terminal state.** Restore it on every path (use
+  `fp::defer`), or a crash leaves the user's terminal in raw mode.
+- **Don't mix line and char reads** on the same stream casually: `read_line`
+  consumes the newline, `read_char` does not.

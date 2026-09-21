@@ -115,11 +115,11 @@ int main() {
   // --- Actor: mailbox drain throughput ---
   constexpr int kMsgs = 100'000;
   std::printf("actor drain (%d messages)\n", kMsgs);
-  bench::measure("Actor.Send -> drained", [&] {
+  bench::measure("Actor.send -> drained", [&] {
     fp::Actor<int, long long> counter(0,
                                       [](long long s, int m) { return s + m; });
     for (int i = 0; i < kMsgs; ++i)
-      counter.Send(1);
+      counter.send(1);
     while (counter.snapshot() < kMsgs)
       std::this_thread::yield();
     bench::keep(&counter);

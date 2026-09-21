@@ -149,3 +149,25 @@ TEST(Concurrent, RetryExhausted) {
   ASSERT_FALSE(r.is_ok());
   EXPECT_EQ(r.error(), "retry exhausted");
 }
+
+TEST(Concurrent, ParForIndexAndMapTo) {
+  fp::ThreadPool pool(4);
+
+  std::vector<int> v(1000, 0);
+  fp::par_for(pool, 0, v.size(), [&](std::size_t i) { v[i] = int(i); });
+  EXPECT_EQ(v[0], 0);
+  EXPECT_EQ(v[999], 999);
+
+  std::vector<int> doubled(1000, 0);
+  fp::par_for_each_index(
+      pool, v, [&](std::size_t i, int x) { doubled[i] = x * 2; });
+  EXPECT_EQ(doubled[999], 1998);
+
+  std::vector<int> out(1000, 0);
+  fp::par_map_to(pool, v, out, [](int x) { return x + 1; });
+  EXPECT_EQ(out[999], 1000);
+
+  // Empty range is a no-op.
+  fp::par_for(pool, 5, 5, [](std::size_t) { FAIL(); });
+  fp::par_map_to(pool, std::vector<int>{}, out, [](int x) { return x; });
+}

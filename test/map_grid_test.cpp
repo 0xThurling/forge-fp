@@ -76,3 +76,34 @@ TEST(Grid, Map3d) {
   EXPECT_EQ(r[0][0][1], 3);
   EXPECT_EQ(r[1][0][0], 4);
 }
+
+TEST(Grid, Map2dIndexed) {
+  std::vector<std::vector<int>> g = {{1, 2}, {3, 4}};
+  auto r = fp::map2d_indexed(g, [](std::size_t i, std::size_t j, int x) {
+    return x + static_cast<int>(i * 10 + j);
+  });
+  EXPECT_EQ(r, (std::vector<std::vector<int>>{{1, 3}, {13, 15}}));
+}
+
+TEST(Grid, Column) {
+  std::vector<std::vector<int>> g = {{1, 2, 3}, {4, 5, 6}};
+  EXPECT_EQ(fp::column(g, 1), (std::vector<int>{2, 5}));
+}
+
+TEST(Grid, Map2dInplace) {
+  std::vector<std::vector<int>> g = {{1, 2}, {3, 4}};
+  fp::map2d_inplace(g, [](int x) { return x * 2; });
+  EXPECT_EQ(g, (std::vector<std::vector<int>>{{2, 4}, {6, 8}}));
+}
+
+TEST(Grid, Windows2d) {
+  std::vector<std::vector<int>> g = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+
+  auto patches = fp::windows2d(g, 2, 2);
+  ASSERT_EQ(patches.size(), 1u);
+  EXPECT_EQ(patches[0], (std::vector<std::vector<int>>{{1, 2}, {4, 5}}));
+
+  auto rows = fp::windows2d(g, 1, 3);
+  ASSERT_EQ(rows.size(), 3u);
+  EXPECT_EQ(rows[1], (std::vector<std::vector<int>>{{4, 5, 6}}));
+}

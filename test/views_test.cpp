@@ -7,6 +7,7 @@
 #include <optional>
 #include <ranges>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -133,4 +134,76 @@ TEST(Views, LazyWithFold) {
           fp::views::filter([](int x) { return x != 6; }),
       0, std::plus<>{});
   EXPECT_EQ(sum, 24);
+}
+
+TEST(Views, IotaIsLazy) {
+  // fp::views::iota is a lazy integer range: no allocation, no materialization.
+  std::size_t count = 0;
+  for ([[maybe_unused]] int i : fp::views::iota(0, 5))
+    ++count;
+  EXPECT_EQ(count, 5u);
+
+  auto squares = fp::views::iota(1, 6) | fp::views::map([](int x) { return x * x; });
+  EXPECT_EQ(fp::to_vector(squares), (std::vector<int>{1, 4, 9, 16, 25}));
+}
+
+TEST(Views, Chunk) {
+  std::vector<int> v = {1, 2, 3, 4, 5};
+
+  std::vector<std::vector<int>> chunks;
+  for (auto part : v | fp::views::chunk(2))
+    chunks.emplace_back(part.begin(), part.end());
+  EXPECT_EQ(chunks, (std::vector<std::vector<int>>{{1, 2}, {3, 4}, {5}}));
+
+  auto via_into = fp::out(fp::into(v) | fp::views::chunk(3));
+  std::vector<std::vector<int>> got;
+  for (auto part : via_into)
+    got.emplace_back(part.begin(), part.end());
+  EXPECT_EQ(got, (std::vector<std::vector<int>>{{1, 2, 3}, {4, 5}}));
+}
+
+TEST(Views, Slide) {
+  std::vector<int> v = {1, 2, 3, 4};
+  std::vector<std::vector<int>> windows;
+  for (auto w : v | fp::views::slide(3))
+    windows.emplace_back(w.begin(), w.end());
+  EXPECT_EQ(windows, (std::vector<std::vector<int>>{{1, 2, 3}, {2, 3, 4}}));
+}
+
+TEST(Views, Stride) {
+  std::vector<int> v = {0, 1, 2, 3, 4, 5, 6};
+  EXPECT_EQ(fp::to_vector(v | fp::views::stride(2)),
+            (std::vector<int>{0, 2, 4, 6}));
+  EXPECT_TRUE(fp::to_vector(v | fp::views::stride(0)).empty());
+}
+
+TEST(Views, TakeLast) {
+  std::vector<int> v = {1, 2, 3, 4, 5};
+  EXPECT_EQ(fp::to_vector(fp::views::take_last(v, 2)),
+            (std::vector<int>{4, 5}));
+  EXPECT_EQ(fp::to_vector(fp::views::take_last(v, 99)), v);
+}
+
+TEST(Views, ZipWith) {
+  std::vector<int> a = {1, 2, 3};
+  std::vector<int> b = {10, 20, 30, 40};
+  auto sums = fp::out(fp::into(a) | fp::views::zip_with(b, [](int x, int y) {
+                        return x + y;
+                      }));
+  EXPECT_EQ(fp::to_vector(sums), (std::vector<int>{11, 22, 33}));
+}
+
+TEST(Views, Zip3) {
+  std::vector<int> a = {1, 2, 3};
+  std::vector<std::string> b = {"x", "y"};
+  std::vector<double> c = {0.5, 1.5, 2.5};
+
+  std::vector<std::tuple<int, std::string, double>> got;
+  for (auto t : fp::views::zip3(a, b, c))
+    got.push_back(t);
+
+  EXPECT_EQ(got.size(), 2u);
+  EXPECT_EQ(std::get<0>(got[1]), 2);
+  EXPECT_EQ(std::get<1>(got[0]), "x");
+  EXPECT_DOUBLE_EQ(std::get<2>(got[1]), 1.5);
 }

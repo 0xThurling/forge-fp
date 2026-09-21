@@ -68,3 +68,45 @@ TEST(Arena, PointerStability) {
     arena.alloc<std::uint64_t>();
   EXPECT_EQ(*first, 42);
 }
+
+TEST(Arena, AllocBytesAndSpan) {
+  fp::Arena arena;
+  auto bytes = arena.alloc_bytes(16);
+  EXPECT_EQ(bytes.size(), 16u);
+
+  auto xs = arena.alloc_span<int>(4);
+  EXPECT_EQ(xs.size(), 4u);
+  xs[0] = 42;
+  EXPECT_EQ(xs[0], 42);
+}
+
+TEST(Arena, MarkAndResetTo) {
+  fp::Arena arena(1024);
+  auto *keep = arena.alloc<int>(1);
+  *keep = 7;
+
+  const auto mark = arena.mark();
+  arena.alloc<int>(100);
+  EXPECT_GT(arena.used(), mark);
+
+  arena.reset_to(mark);
+  EXPECT_EQ(arena.used(), mark);
+  EXPECT_EQ(*keep, 7);
+}
+
+TEST(Arena, WithArenaScope) {
+  fp::Arena arena(1024);
+  auto *keep = arena.alloc<int>(1);
+  *keep = 1;
+  const auto before = arena.used();
+
+  const auto result = fp::with_arena_scope(arena, [](fp::Arena &a) {
+    auto s = a.alloc_span<int>(8);
+    s[0] = 5;
+    return s[0];
+  });
+
+  EXPECT_EQ(result, 5);
+  EXPECT_EQ(arena.used(), before);
+  EXPECT_EQ(*keep, 1);
+}
