@@ -113,7 +113,7 @@ public:
   std::stop_token token() const { return src_->get_token(); }
   bool cancelled() const { return token().stop_requested(); }
 
-  Result<T> get() const { return fut_.get(); }
+  [[nodiscard]] Result<T> get() const { return fut_.get(); }
 
   template <class Rep, class Period>
   std::future_status

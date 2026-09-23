@@ -9,11 +9,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 # --- Dependencies ---
-FetchContent_Declare(googletest GIT_REPOSITORY "https://github.com/google/googletest.git" GIT_TAG "v1.14.0")
-FetchContent_MakeAvailable(googletest)
 
 
 # --- Build Flags ---
+set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
+set(CMAKE_C_COMPILER_LAUNCHER ccache)
 find_package(Threads REQUIRED)
 link_libraries(Threads::Threads)
 add_compile_options("$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>")
@@ -24,36 +24,64 @@ add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/W4>")
 
 # --- Project Target ---
 file(GLOB_RECURSE SOURCES RELATIVE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src/*.cpp)
+list(FILTER SOURCES EXCLUDE REGEX "/(build|build-[^/]*|CMakeFiles)/")
 if(SOURCES)
   add_library(forgefp STATIC ${SOURCES})
-  install(TARGETS forgefp EXPORT forgefpConfig DESTINATION lib)
-  target_include_directories(forgefp PUBLIC ${PROJECT_SOURCE_DIR}/include)
+  target_include_directories(forgefp PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
   target_include_directories(forgefp PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  install(TARGETS forgefp EXPORT forgefpConfig
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include)
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
+  install(EXPORT forgefpConfig
+    FILE forgefpConfig.cmake
+    NAMESPACE forgefp::
+    DESTINATION lib/cmake/forgefp)
 else()
   message(WARNING "No source files found in src/. Creating header-only INTERFACE library 'forgefp'.")
   add_library(forgefp INTERFACE)
-  target_include_directories(forgefp INTERFACE ${PROJECT_SOURCE_DIR}/include)
+  target_include_directories(forgefp INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
+  install(TARGETS forgefp EXPORT forgefpConfig INCLUDES DESTINATION include)
+  install(EXPORT forgefpConfig
+    FILE forgefpConfig.cmake
+    NAMESPACE forgefp::
+    DESTINATION lib/cmake/forgefp)
 endif()
 
 
+# --- Testing and benchmarks ---
+# Only the top-level project builds these; a consumer of this project
+# does not build (or fetch a framework for) another project's tests.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR FORGE_BUILD_DEPENDENCY_TESTS)
+  enable_testing()
+  # Prefer a system/installed GTest; only fetch it when none is available
+  # (the FetchContent path needs network access, a system package does not).
+  find_package(GTest QUIET)
+  if(NOT GTest_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(googletest GIT_REPOSITORY "https://github.com/google/googletest.git" GIT_TAG "v1.14.0")
+    FetchContent_MakeAvailable(googletest)
+  endif()
+  include(GoogleTest)
+  file(GLOB_RECURSE TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/*.cpp")
+  list(FILTER TEST_SOURCES EXCLUDE REGEX "/(build|build-[^/]*|CMakeFiles)/")
 
-# --- Testing ---
-enable_testing()
-file(GLOB_RECURSE TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/*.cpp")
+  # Build list of sources WITHOUT src/main.cpp (to avoid multiple main)
+  file(GLOB_RECURSE APP_SOURCES "${PROJECT_SOURCE_DIR}/src/*.cpp")
+  list(FILTER APP_SOURCES EXCLUDE REGEX "/(build|build-[^/]*|CMakeFiles)/")
+  list(FILTER APP_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
 
-# Build list of sources WITHOUT src/main.cpp (to avoid multiple main)
-file(GLOB_RECURSE APP_SOURCES "${PROJECT_SOURCE_DIR}/src/*.cpp")
-list(FILTER APP_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
+  add_executable(${PROJECT_NAME}_tests ${TEST_SOURCES} ${APP_SOURCES})
+  target_include_directories(${PROJECT_NAME}_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  target_link_libraries(${PROJECT_NAME}_tests PUBLIC GTest::gtest_main)
+  gtest_discover_tests(${PROJECT_NAME}_tests)
 
-add_executable(${PROJECT_NAME}_tests ${TEST_SOURCES} ${APP_SOURCES})
-target_include_directories(${PROJECT_NAME}_tests PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-target_link_libraries(${PROJECT_NAME}_tests PUBLIC GTest::gtest_main)
-include(GoogleTest)
-gtest_discover_tests(${PROJECT_NAME}_tests)
-       
+endif()
+
 

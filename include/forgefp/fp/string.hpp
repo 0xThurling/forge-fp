@@ -59,6 +59,7 @@ inline std::vector<std::string> split(std::string const &s,
     out.push_back(s);
     return out;
   }
+  out.reserve(s.size() / 8 + 1); // heuristic: fields average >= 8 chars
   size_t start = 0, pos;
   while ((pos = s.find(delim, start)) != std::string::npos) {
     out.push_back(s.substr(start, pos - start));
@@ -75,6 +76,7 @@ inline std::vector<std::string_view> split_view(std::string_view s, char delim) 
   std::vector<std::string_view> out;
   if (s.empty())
     return out;
+  out.reserve(s.size() / 8 + 1);
   size_t start = 0;
   for (size_t i = 0; i < s.size(); ++i) {
     if (s[i] == delim) {
@@ -165,7 +167,7 @@ inline std::string pad_right(std::string s, size_t width, char c = ' ') {
   return s;
 }
 
-inline Result<int> to_int(std::string_view s) {
+[[nodiscard]] inline Result<int> to_int(std::string_view s) {
   std::string t = trim(std::string(s));
   if (t.empty())
     return err<int>("not a number");
@@ -176,7 +178,7 @@ inline Result<int> to_int(std::string_view s) {
   }
 }
 
-inline Result<double> to_double(std::string_view s) {
+[[nodiscard]] inline Result<double> to_double(std::string_view s) {
   std::string t = trim(std::string(s));
   if (t.empty())
     return err<double>("not a number");

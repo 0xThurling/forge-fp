@@ -15,6 +15,10 @@ g++ -std=c++20 -O2 -march=native -Isrc -Ibench \
     bench/numerics_bench.cpp -o build/numerics_bench
 g++ -std=c++20 -O2 -march=native -Isrc -Ibench \
     bench/linalg_bench.cpp -o build/linalg_bench
+g++ -std=c++20 -O2 -march=native -Isrc -Ibench \
+    bench/bits_bench.cpp -o build/bits_bench
+g++ -std=c++20 -O2 -march=native -Isrc -Ibench \
+    bench/parse_bench.cpp -o build/parse_bench
 
 echo "== simd =="
 "${PIN[@]}" ./build/simd_bench
@@ -26,3 +30,7 @@ echo "== numerics =="
 "${PIN[@]}" ./build/numerics_bench
 echo "== linalg =="
 "${PIN[@]}" ./build/linalg_bench
+echo "== bits =="
+"${PIN[@]}" ./build/bits_bench
+echo "== parse =="
+"${PIN[@]}" ./build/parse_bench

@@ -59,7 +59,7 @@ TEST(Grid, MapTransposeFlatten) {
 
 TEST(Grid, ForEachIndexTabulateCartesian) {
   int count = 0;
-  fp::for_each_index(2, 3, [&](size_t, size_t) { ++count; });
+  fp::for_each_cell(2, 3, [&](size_t, size_t) { ++count; });
   EXPECT_EQ(count, 6);
 
   auto squares = fp::tabulate(4, [](size_t i) { return (int)(i * i); });

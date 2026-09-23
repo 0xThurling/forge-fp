@@ -39,12 +39,14 @@ Everything else is *combining* these functions.
 | `eof` | end of input (consumes nothing) |
 | `peek(p)` | run `p` without consuming; succeed only if it matches |
 | `not_followed(p)` | negative lookahead: succeed iff `p` does **not** match |
+| `scan_while(pred)` / `scan_while1(pred)` | greedy slice of characters matching `pred` (may / must match at least one) |
 
 ```cpp
 fp::digit;                       // a Parser<char>
 fp::one_of('+', '-');            // '+' or '-'
 fp::satisfy([](char c) { return c >= 'A' && c <= 'Z'; });
 fp::not_followed(fp::digit) >> fp::letter;   // a letter that isn't a digit
+fp::scan_while1(fp::digit);                  // "1234" as a string_view, no allocation
 ```
 
 ## Sequencing
@@ -208,6 +210,30 @@ int main() {
 
 The whole grammar is primitives + sequencing + `choice` + one `ref` for the
 recursion — no cursor, no state machine.
+
+## Performance and cost
+
+`Parser<T>` type-erases its callable in a `std::function`, so a grammar built
+from N combinators pays N indirect calls per input position. Two practical
+consequences:
+
+- **Scan tokens with `scan_while`/`scan_while1`, not `many`/`many1`.** They
+  return a `string_view` slice into the input; `many` builds a
+  `std::vector<char>` per token. On `bench/parse_bench.cpp` (a comma-separated
+  list of 2 000 integers) switching one token parser cut the run from ~137 µs to
+  ~31 µs — from 16x to ~3.4x a hand-written loop, which is the price of the
+  composition.
+- **Build the grammar once.** `auto p = expr();` outside the loop: each
+  combinator allocates its own `std::function`.
+
+For the very hottest scanning, a hand-written loop over `std::string_view` is
+still fastest — reach for `fp::Parser` where the grammar is non-trivial and the
+volume is moderate.
+
+Writing your own primitive? Parsers are called as `f(remaining, offset)` and
+return `pair{value, new_remaining}`: `remaining` is the *unconsumed tail* (scan
+its front), `offset` is the absolute position, kept only so errors can point at
+the input.
 
 ## Errors
 

@@ -43,6 +43,25 @@ std::vector<std::vector<T>> matmul(std::vector<std::vector<T>> const &a,
   return out;
 }
 
+// Flat-buffer product: `a` is m x k row-major, `b` is k x n row-major, both
+// contiguous (std::span accepts arrays, vector, Buffer<T>, slices). The nested
+// form above is convenient; this one removes a pointer chase per element for
+// data that already lives in one buffer.
+template <class T>
+std::vector<T> matmul(std::span<T const> a, std::size_t m, std::size_t k,
+                      std::span<T const> b, std::size_t n) {
+  assert(a.size() >= m * k);
+  assert(b.size() >= k * n);
+  std::vector<T> out(m * n, T{});
+  for (std::size_t i = 0; i < m; ++i)
+    for (std::size_t p = 0; p < k; ++p) {
+      const T a_ip = a[i * k + p];
+      for (std::size_t j = 0; j < n; ++j)
+        out[i * n + j] += a_ip * b[p * n + j];
+    }
+  return out;
+}
+
 // Batched (B x m x k) * (B x k x n) -> (B x m x n).
 template <class T>
 std::vector<std::vector<std::vector<T>>>
@@ -87,7 +106,7 @@ std::vector<std::vector<T>> outer(std::vector<T> const &a,
 
 // Gaussian elimination with partial pivoting. Fails on singular systems.
 template <class T>
-Result<std::vector<T>> solve(std::vector<std::vector<T>> const &a,
+[[nodiscard]] Result<std::vector<T>> solve(std::vector<std::vector<T>> const &a,
                              std::vector<T> const &b) {
   const std::size_t n = a.size();
   if (n == 0 || b.size() != n || a[0].size() != n)
@@ -191,7 +210,7 @@ template <class T> T norm_l2(std::span<T const> v) {
 
 // First index of the maximum; empty -> nullopt. Ties keep the first index.
 template <std::ranges::range R>
-std::optional<std::size_t> argmax(R const &r) {
+[[nodiscard]] std::optional<std::size_t> argmax(R const &r) {
   auto it = std::ranges::begin(r);
   auto end = std::ranges::end(r);
   if (it == end)
@@ -210,7 +229,7 @@ std::optional<std::size_t> argmax(R const &r) {
 }
 
 template <std::ranges::range R>
-std::optional<std::size_t> argmin(R const &r) {
+[[nodiscard]] std::optional<std::size_t> argmin(R const &r) {
   auto it = std::ranges::begin(r);
   auto end = std::ranges::end(r);
   if (it == end)

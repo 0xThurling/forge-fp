@@ -54,6 +54,8 @@ template <std::ranges::range R, class F> auto filter(R &&r, F pred) {
 template <std::ranges::range R> auto take(R &&r, size_t n) {
   using T = std::ranges::range_value_t<R>;
   std::vector<T> out;
+  if constexpr (std::ranges::sized_range<R>)
+    out.reserve(std::min<std::size_t>(n, std::ranges::size(r)));
   size_t i = 0;
   for (auto it = std::ranges::begin(r); it != std::ranges::end(r) && i < n;
        ++it, ++i)
@@ -64,6 +66,8 @@ template <std::ranges::range R> auto take(R &&r, size_t n) {
 template <std::ranges::range R> auto drop(R &&r, size_t n) {
   using T = std::ranges::range_value_t<R>;
   std::vector<T> out;
+  if constexpr (std::ranges::sized_range<R>)
+    out.reserve(std::ranges::size(r) - std::min<std::size_t>(n, std::ranges::size(r)));
   auto it = std::ranges::begin(r);
   auto end = std::ranges::end(r);
   for (size_t i = 0; i < n && it != end; ++i, ++it) {
@@ -144,6 +148,8 @@ auto zip(R1 &&a, R2 &&b) {
   using A = std::ranges::range_value_t<R1>;
   using B = std::ranges::range_value_t<R2>;
   std::vector<std::pair<A, B>> out;
+  if constexpr (std::ranges::sized_range<R1> && std::ranges::sized_range<R2>)
+    out.reserve(std::min<std::size_t>(std::ranges::size(a), std::ranges::size(b)));
   // Separate declarations: one `auto` statement cannot deduce two different
   // iterator types (e.g. zip(vector<int>, vector<string>)).
   auto ia = std::ranges::begin(a);
@@ -158,6 +164,8 @@ auto zip(R1 &&a, R2 &&b) {
 template <std::ranges::range R> auto enumerate(R &&r) {
   using T = std::ranges::range_value_t<R>;
   std::vector<std::pair<size_t, T>> out;
+  if constexpr (std::ranges::sized_range<R>)
+    out.reserve(std::ranges::size(r));
   size_t i = 0;
   for (auto &&x : r)
     out.emplace_back(i++, std::forward<decltype(x)>(x));
@@ -175,6 +183,8 @@ T fold_right(R &&r, T init, F op) {
 template <std::ranges::range R, class T, class F>
 std::vector<T> scan(R &&r, T init, F op) {
   std::vector<T> out;
+  if constexpr (std::ranges::sized_range<R>)
+    out.reserve(std::ranges::size(r));
   for (auto &&x : r) {
     init = op(init, x);
     out.push_back(init);
@@ -200,29 +210,39 @@ template <std::ranges::range R> auto chunk(R &&r, size_t n) {
   return out;
 }
 
+// Every window of `n` consecutive elements. `n == 0` yields nothing (like
+// chunk); a ring buffer keeps the sliding window O(1) per element instead of
+// erasing from the front.
 template <std::ranges::range R> auto windows(R &&r, size_t n) {
   using T = std::ranges::range_value_t<R>;
   std::vector<std::vector<T>> out;
-  std::vector<T> buf;
+  if (n == 0)
+    return out;
+  std::vector<T> ring(n);
+  size_t seen = 0;
   for (auto &&x : r) {
-    buf.push_back(std::forward<decltype(x)>(x));
-    if (buf.size() > n)
-      buf.erase(buf.begin());
-    if (buf.size() == n)
-      out.push_back(buf);
+    ring[seen % n] = std::forward<decltype(x)>(x);
+    ++seen;
+    if (seen >= n) {
+      std::vector<T> window;
+      window.reserve(n);
+      for (size_t k = 0; k < n; ++k)
+        window.push_back(ring[(seen - n + k) % n]);
+      out.push_back(std::move(window));
+    }
   }
   return out;
 }
 
 template <std::ranges::range R>
-std::optional<std::ranges::range_value_t<R>> minimum(R &&r) {
+[[nodiscard]] std::optional<std::ranges::range_value_t<R>> minimum(R &&r) {
   if (std::ranges::empty(r))
     return std::nullopt;
   return *std::ranges::min_element(r);
 }
 
 template <std::ranges::range R>
-std::optional<std::ranges::range_value_t<R>> maximum(R &&r) {
+[[nodiscard]] std::optional<std::ranges::range_value_t<R>> maximum(R &&r) {
   if (std::ranges::empty(r))
     return std::nullopt;
   return *std::ranges::max_element(r);
@@ -269,12 +289,29 @@ template <std::ranges::range R> auto sort(R &&r) {
   return out;
 }
 
+// See vec.hpp's sort_by: the key is evaluated per comparison (allocation-free,
+// best for cheap keys).
 template <std::ranges::range R, class F> auto sort_by(R &&r, F key_fn) {
   using T = std::ranges::range_value_t<R>;
   std::vector<T> out(r.begin(), r.end());
   std::ranges::sort(out, [&](T const &a, T const &b) {
     return key_fn(a) < key_fn(b);
   });
+  return out;
+}
+
+// Keys computed once: better when the key is expensive to produce.
+template <std::ranges::range R, class F> auto sort_by_cached(R &&r, F key_fn) {
+  using T = std::ranges::range_value_t<R>;
+  using K = std::invoke_result_t<F, T>;
+  std::vector<std::pair<K, T>> keyed;
+  for (auto &&x : r)
+    keyed.emplace_back(key_fn(x), std::forward<decltype(x)>(x));
+  std::ranges::stable_sort(keyed, {}, &std::pair<K, T>::first);
+  std::vector<T> out;
+  out.reserve(keyed.size());
+  for (auto &kv : keyed)
+    out.push_back(std::move(kv.second));
   return out;
 }
 
@@ -286,15 +323,17 @@ template <std::ranges::range R, class F> auto partition(R &&r, F pred) {
   return std::pair{std::move(yes), std::move(no)};
 }
 
+// One pass: the head is collected until the predicate fails, the rest follows.
+// (A find_if_not + second loop would re-iterate the range, which input ranges
+// cannot survive.)
 template <std::ranges::range R, class F> auto span(R &&r, F pred) {
   using T = std::ranges::range_value_t<R>;
-  auto it = std::ranges::find_if_not(r, pred);
   std::vector<T> head, rest;
   bool in_head = true;
-  for (auto i = std::ranges::begin(r); i != std::ranges::end(r); ++i) {
-    if (i == it)
+  for (auto &&x : r) {
+    if (in_head && !pred(x))
       in_head = false;
-    (in_head ? head : rest).push_back(*i);
+    (in_head ? head : rest).push_back(std::forward<decltype(x)>(x));
   }
   return std::pair{std::move(head), std::move(rest)};
 }
@@ -371,6 +410,11 @@ template <class T, class F> auto scan(T init, F op) {
 template <class F> auto sort_by(F key_fn) {
   return [key_fn = std::move(key_fn)](auto &&r) {
     return fp::sort_by(std::forward<decltype(r)>(r), key_fn);
+  };
+}
+template <class F> auto sort_by_cached(F key_fn) {
+  return [key_fn = std::move(key_fn)](auto &&r) {
+    return fp::sort_by_cached(std::forward<decltype(r)>(r), key_fn);
   };
 }
 template <class F> auto partition(F pred) {

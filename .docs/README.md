@@ -18,6 +18,7 @@ everything except the opt-ins: `simd.hpp`, `gpu.hpp`, `autodiff.hpp` and
 | [Structured errors](adts.md#outcomet--structured-errors-with-codes-and-context) | `error.hpp` | `Error` / `Outcome<T>`: codes, context chains, source locations |
 | [Collections](collections.md) | `vec.hpp`, `ranges.hpp`, `views.hpp` | `map`/`filter`/`fold`/`zip`/… over vectors and ranges, lazy `fp::views` (incl. `chunk`/`slide`/`stride`/`zip_with`/`zip3`) |
 | [Iteration & in-place](inplace.md) | `inplace.hpp` | `for_each`, `transform_inplace`, `map_to`, `sort_inplace`, `remove_if_inplace`, … — the allocation-free counterparts of the eager combinators |
+| [Bits](bits.md) | `bits.hpp` | object representation, single bits, bit ranges, counting, `rotl`/`byteswap`/`bit_reverse`, whole-value bitwise ops, `bit_span` sections (search, slicing, iteration), compile-time `bit_field`/`bit_split`, LSB- and MSB-first packed streams, `to_binary`/`to_hex` |
 | [Maps & grids](maps-grids.md) | `map.hpp`, `grid.hpp` | associative-container helpers, 2D/3D grids, indexed/patch mapping |
 | [Strings](strings.md) | `string.hpp` | `split`/`join`/`trim`/parsing/`to_string`/… in `fp::str` |
 | [Parsing](parsing.md) | `parse.hpp` | parser combinators |
@@ -32,6 +33,7 @@ everything except the opt-ins: `simd.hpp`, `gpu.hpp`, `autodiff.hpp` and
 | [Random](random.md) | `random.hpp` | seedable `Rng`, sampling, shuffling, weighted choice |
 | [Time](time.md) | `time.hpp` | `now_seconds`, `elapsed_seconds`, `Stopwatch` |
 | [Serialization](serialization.md) | `serialize.hpp` | generic text/binary round-trip for numeric ranges |
+| [Reflection](reflection.md) | `reflect.hpp` | macro-free dynamic reflection: field access, metadata, `describe_shape`, lock-free registry, `to_string`/`equal`/`copy_fields`, enum names, `FieldAccess` opt-in, compile-time cost guidance |
 | [Autodiff](autodiff.md) | `autodiff.hpp` | forward-mode `Dual<T>`, `derivative` *(opt-in)* |
 | [SIMD](simd.md) | `simd.hpp` | vectorized `map`/`reduce`/`dot`/math, `axpy_inplace` |
 | [GPU kernels (SYCL)](gpu.md) | `gpu.hpp` | device buffers + kernels (`Buffer`/`HostBuffer`/`Scratch`, elementwise, row/column, `softmax_rows`, tiled `matmul`/`transpose`, `reduce`/`dot`) with a CPU fallback — design and measurements in [`GPU.md`](../GPU.md) *(opt-in)* |

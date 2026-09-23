@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <random>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -43,20 +44,35 @@ public:
     std::shuffle(v.begin(), v.end(), engine_);
   }
 
-  // k distinct indices from [0, n), in random order (Fisher-Yates prefix).
-  // k is clamped to n.
+  // k distinct indices from [0, n), in random order. k is clamped to n.
+  // Dense draws use a Fisher-Yates prefix; sparse ones (k << n) sample by
+  // rejection into a set, so 10-of-a-million is O(k) instead of O(n).
   std::vector<std::size_t> sample_indices(std::size_t n, std::size_t k) {
-    std::vector<std::size_t> idx(n);
-    for (std::size_t i = 0; i < n; ++i)
-      idx[i] = i;
-
     k = std::min(k, n);
-    for (std::size_t i = 0; i < k; ++i) {
-      std::uniform_int_distribution<std::size_t> dist(i, n - 1);
-      std::swap(idx[i], idx[dist(engine_)]);
+    std::vector<std::size_t> out;
+    if (k == 0)
+      return out;
+    if (k >= (n + 3) / 4) {
+      std::vector<std::size_t> idx(n);
+      for (std::size_t i = 0; i < n; ++i)
+        idx[i] = i;
+      for (std::size_t i = 0; i < k; ++i) {
+        std::uniform_int_distribution<std::size_t> dist(i, n - 1);
+        std::swap(idx[i], idx[dist(engine_)]);
+      }
+      idx.resize(k);
+      return idx;
     }
-    idx.resize(k);
-    return idx;
+    std::unordered_set<std::size_t> seen;
+    seen.reserve(k * 2);
+    out.reserve(k);
+    std::uniform_int_distribution<std::size_t> dist(0, n - 1);
+    while (out.size() < k) {
+      const std::size_t i = dist(engine_);
+      if (seen.insert(i).second)
+        out.push_back(i);
+    }
+    return out;
   }
 
   // Weighted choice; weights need not be normalized. Requires a non-empty

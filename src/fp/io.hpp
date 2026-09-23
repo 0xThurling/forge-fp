@@ -15,40 +15,54 @@
 #include <vector>
 
 namespace fp {
-inline Result<std::string> read_file(std::string const &path) {
-  std::ifstream in(path, std::ios::binary);
+[[nodiscard]] inline Result<std::string> read_file(std::string_view path) {
+  std::ifstream in{std::filesystem::path(path), std::ios::binary};
   if (!in)
-    return err<std::string>("cannot open " + path);
+    return err<std::string>("cannot open " + std::string(path));
 
-  // istreambuf_iterator reads raw bytes; istream_iterator<char> would skip
-  // whitespace (including newlines).
-  std::string content((std::istreambuf_iterator<char>(in)),
-                      std::istreambuf_iterator<char>());
+  std::string content;
+  // Seekable input (the common case): size the buffer, then one bulk read.
+  // Reading through istreambuf_iterator instead costs a virtual call per byte.
+  if (in.seekg(0, std::ios::end)) {
+    const auto size = in.tellg();
+    if (size > 0) {
+      content.resize(static_cast<std::size_t>(size));
+      in.seekg(0, std::ios::beg);
+      in.read(content.data(), static_cast<std::streamsize>(content.size()));
+      content.resize(static_cast<std::size_t>(in.gcount()));
+    }
+  } else {
+    // Not seekable (a pipe, /proc, ...): clear the failed seek and stream it.
+    in.clear();
+    content.assign(std::istreambuf_iterator<char>(in),
+                   std::istreambuf_iterator<char>());
+  }
 
   if (in.bad())
-    return err<std::string>("read failed: " + path);
+    return err<std::string>("read failed: " + std::string(path));
   return ok(std::move(content));
 }
 
-inline Result<std::vector<std::string>> read_lines(std::string const &path) {
-  std::ifstream in(path);
+[[nodiscard]] inline Result<std::vector<std::string>> read_lines(std::string_view path) {
+  std::ifstream in{std::filesystem::path(path)};
   if (!in)
-    return err<std::vector<std::string>>("cannot open " + path);
+    return err<std::vector<std::string>>("cannot open " + std::string(path));
   std::vector<std::string> lines;
+  lines.reserve(64); // heuristic; grows by doubling
   std::string line;
   while (std::getline(in, line))
     lines.push_back(std::move(line));
   return ok(std::move(lines));
 }
 
-inline Result<void> write_file(std::string const &path,
+[[nodiscard]] inline Result<void> write_file(std::string_view path,
                                std::string_view content) {
-  std::ofstream out(path, std::ios::binary);
+  std::ofstream out{std::filesystem::path(path), std::ios::binary};
   if (!out)
-    return err<void>("cannot open " + path);
+    return err<void>("cannot open " + std::string(path));
   out.write(content.data(), static_cast<std::streamsize>(content.size()));
   if (!out)
-    return err<void>("write failed " + path);
+    return err<void>("write failed " + std::string(path));
   return ok<void>();
 }
 
@@ -74,20 +88,20 @@ inline void interact(std::function<std::string(std::string)> f) {
 }
 
 // True when the file exists and can be opened for reading.
-inline bool exists(std::string const &path) {
-  std::ifstream in(path, std::ios::binary);
+inline bool exists(std::string_view path) {
+  std::ifstream in{std::filesystem::path(path), std::ios::binary};
   return static_cast<bool>(in);
 }
 
-inline Result<std::vector<std::byte>> read_bytes(std::string const &path) {
-  std::ifstream in(path, std::ios::binary);
+[[nodiscard]] inline Result<std::vector<std::byte>> read_bytes(std::string_view path) {
+  std::ifstream in{std::filesystem::path(path), std::ios::binary};
   if (!in)
-    return err<std::vector<std::byte>>("cannot open " + path);
+    return err<std::vector<std::byte>>("cannot open " + std::string(path));
 
   const std::string content((std::istreambuf_iterator<char>(in)),
                             std::istreambuf_iterator<char>());
   if (in.bad())
-    return err<std::vector<std::byte>>("read failed: " + path);
+    return err<std::vector<std::byte>>("read failed: " + std::string(path));
 
   std::vector<std::byte> out(content.size());
   if (!content.empty())
@@ -95,20 +109,20 @@ inline Result<std::vector<std::byte>> read_bytes(std::string const &path) {
   return ok(std::move(out));
 }
 
-inline Result<void> write_bytes(std::string const &path,
+[[nodiscard]] inline Result<void> write_bytes(std::string_view path,
                                 std::span<std::byte const> data) {
-  std::ofstream out(path, std::ios::binary);
+  std::ofstream out{std::filesystem::path(path), std::ios::binary};
   if (!out)
-    return err<void>("cannot open " + path);
+    return err<void>("cannot open " + std::string(path));
 
   out.write(reinterpret_cast<char const *>(data.data()),
             static_cast<std::streamsize>(data.size()));
   if (!out)
-    return err<void>("write failed " + path);
+    return err<void>("write failed " + std::string(path));
   return ok<void>();
 }
 
-inline Result<void> write_lines(std::string const &path,
+[[nodiscard]] inline Result<void> write_lines(std::string_view path,
                                 std::vector<std::string> const &lines) {
   std::string content;
   for (auto const &line : lines) {
@@ -119,11 +133,12 @@ inline Result<void> write_lines(std::string const &path,
 }
 
 // Like `mkdir -p`; idempotent.
-inline Result<void> ensure_directory(std::string const &path) {
+[[nodiscard]] inline Result<void> ensure_directory(std::string_view path) {
   std::error_code ec;
   std::filesystem::create_directories(path, ec);
   if (ec)
-    return err<void>("cannot create directory " + path + ": " + ec.message());
+    return err<void>("cannot create directory " + std::string(path) + ": " +
+                     ec.message());
   return ok<void>();
 }
 } // namespace fp

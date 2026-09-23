@@ -59,7 +59,7 @@ inline Error to_error(std::error_code const &c) { return error(c.message(), c); 
 // Push one level of context: `msg` describes the failed operation, the
 // original error becomes its cause. The code is preserved.
 template <class T>
-Outcome<T> with_context(Outcome<T> const &o, std::string context,
+[[nodiscard]] Outcome<T> with_context(Outcome<T> const &o, std::string context,
                         std::source_location where =
                             std::source_location::current()) {
   if (o.is_ok())
@@ -87,14 +87,14 @@ template <class T> Result<T> to_result(Outcome<T> const &o) {
   return err<T>(to_string(o.error()));
 }
 
-inline Result<void> to_result(Outcome<void> const &o) {
+[[nodiscard]] inline Result<void> to_result(Outcome<void> const &o) {
   if (o.is_ok())
     return ok<void>();
   return err<void>(to_string(o.error()));
 }
 
 template <class T>
-Outcome<T> from_result(Result<T> const &r, std::error_code code = {},
+[[nodiscard]] Outcome<T> from_result(Result<T> const &r, std::error_code code = {},
                        std::source_location where =
                            std::source_location::current()) {
   if (r.is_ok())
@@ -102,7 +102,7 @@ Outcome<T> from_result(Result<T> const &r, std::error_code code = {},
   return Outcome<T>::err(Error{code, r.error(), {}, where});
 }
 
-inline Outcome<void> from_result(Result<void> const &r,
+[[nodiscard]] inline Outcome<void> from_result(Result<void> const &r,
                                  std::error_code code = {},
                                  std::source_location where =
                                      std::source_location::current()) {

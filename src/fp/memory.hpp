@@ -133,10 +133,10 @@ public:
 
   void fill(T const &value) { std::fill_n(data_, size_, value); }
 
-  Result<Buffer<T>> clone() const { return copy_of(span()); }
+  [[nodiscard]] Result<Buffer<T>> clone() const { return copy_of(span()); }
 
   // New block of size `n`; copies min(size(), n) elements.
-  Result<Buffer<T>> resized(std::size_t n) const {
+  [[nodiscard]] Result<Buffer<T>> resized(std::size_t n) const {
     auto out = alloc(n);
     if (!out.is_ok())
       return out;
@@ -144,7 +144,7 @@ public:
     return out;
   }
 
-  static Result<Buffer<T>> alloc(std::size_t n) {
+  [[nodiscard]] static Result<Buffer<T>> alloc(std::size_t n) {
     Buffer b;
     if (n == 0)
       return ok(std::move(b));
@@ -157,7 +157,7 @@ public:
     return ok(std::move(b));
   }
 
-  static Result<Buffer<T>> zeros(std::size_t n) {
+  [[nodiscard]] static Result<Buffer<T>> zeros(std::size_t n) {
     auto out = alloc(n);
     if (!out.is_ok())
       return out;
@@ -165,7 +165,7 @@ public:
     return out;
   }
 
-  static Result<Buffer<T>> copy_of(std::span<T const> src) {
+  [[nodiscard]] static Result<Buffer<T>> copy_of(std::span<T const> src) {
     auto out = alloc(src.size());
     if (!out.is_ok())
       return out;
@@ -173,7 +173,7 @@ public:
     return out;
   }
 
-  static Result<Buffer<T>> from(std::initializer_list<T> init) {
+  [[nodiscard]] static Result<Buffer<T>> from(std::initializer_list<T> init) {
     auto out = alloc(init.size());
     if (!out.is_ok())
       return out;
@@ -331,7 +331,7 @@ template <class T> void fill_bytes(std::span<T> dst, std::byte value) {
 }
 
 template <class T>
-Result<void> copy_into(std::span<T> dst, std::span<T const> src) {
+[[nodiscard]] Result<void> copy_into(std::span<T> dst, std::span<T const> src) {
   if (dst.size() < src.size())
     return err<void>("copy_into: destination too small");
   std::copy_n(src.data(), src.size(), dst.data());

@@ -23,11 +23,11 @@ template <class E, class T> struct Either {
   bool operator==(Either const &) const = default;
   explicit operator bool() const { return is_ok(); }
 
-  static Either ok(T t) {
+  [[nodiscard]] static Either ok(T t) {
     return Either{std::variant<E, T>(std::in_place_index<1>, std::move(t))};
   }
 
-  static Either err(E e) {
+  [[nodiscard]] static Either err(E e) {
     return Either{std::variant<E, T>(std::in_place_index<0>, std::move(e))};
   }
 };
@@ -44,12 +44,12 @@ template <class E> struct Either<E, void> {
   bool operator==(Either const &) const = default;
   explicit operator bool() const { return is_ok(); }
 
-  static Either ok() {
+  [[nodiscard]] static Either ok() {
     return Either{
         std::variant<E, std::monostate>(std::in_place_index<1>)};
   }
 
-  static Either err(E e) {
+  [[nodiscard]] static Either err(E e) {
     return Either{
         std::variant<E, std::monostate>(std::in_place_index<0>, std::move(e))};
   }
@@ -105,14 +105,14 @@ auto map_error(Either<E, T> const &e, F f)
 }
 
 template <class E, class T>
-Either<E, T> flatten(Either<E, Either<E, T>> const &e) {
+[[nodiscard]] Either<E, T> flatten(Either<E, Either<E, T>> const &e) {
   if (!e.is_ok())
     return Either<E, T>::err(e.error());
   return e.value();
 }
 
 template <class E, class T>
-std::optional<T> to_optional(Either<E, T> const &e) {
+[[nodiscard]] std::optional<T> to_optional(Either<E, T> const &e) {
   return e.is_ok() ? std::optional<T>(e.value()) : std::nullopt;
 }
 
@@ -159,7 +159,7 @@ T const &expect(Either<E, T> const &e, char const *msg) {
 }
 
 template <class E, class T>
-Either<E, T> ok_or(std::optional<T> const &o, E error) {
+[[nodiscard]] Either<E, T> ok_or(std::optional<T> const &o, E error) {
   return o ? Either<E, T>::ok(*o) : Either<E, T>::err(std::move(error));
 }
 

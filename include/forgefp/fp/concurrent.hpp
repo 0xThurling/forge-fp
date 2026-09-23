@@ -22,6 +22,10 @@
 #include "task.hpp"
 
 namespace fp {
+// Parallel map. NOTE: this overload launches fresh std::async workers *per
+// call* (tens of microseconds each); calling it in a loop is usually a
+// mistake. Pass a ThreadPool — `par_map(pool, v, f)` — which reuses its
+// workers; that is the primitive the other parallel helpers build on.
 template <class T, class F>
 auto par_map(std::vector<T> const &v, F f,
              std::size_t threads = std::thread::hardware_concurrency()) {
@@ -60,6 +64,8 @@ auto par_map(std::vector<T> const &v, F f,
   return result;
 }
 
+// See par_map: threads are spawned per call; prefer the ThreadPool overload
+// (`par_for_each(pool, v, f)`) when calling repeatedly.
 template <class T, class F>
 void par_for_each(std::vector<T> const &v, F f,
                   std::size_t threads = std::thread::hardware_concurrency()) {
@@ -111,7 +117,17 @@ public:
     return t;
   }
 
-  std::optional<T> try_recv() {
+  // Non-blocking send: false when a bounded channel is full or closed.
+  bool try_send(T t) {
+    std::unique_lock lock(mu_);
+    if (closed_ || (capacity_ > 0 && q_.size() >= capacity_))
+      return false;
+    q_.push(std::move(t));
+    not_empty_.notify_one();
+    return true;
+  }
+
+  [[nodiscard]] std::optional<T> try_recv() {
     std::lock_guard lock(mu_);
     if (q_.empty())
       return std::nullopt;
@@ -157,7 +173,7 @@ public:
     return true;
   }
 
-  std::optional<T> try_pop() {
+  [[nodiscard]] std::optional<T> try_pop() {
     size_t head = head_.load(std::memory_order_relaxed);
     size_t tail = tail_.load(std::memory_order_acquire);
     if (head == tail)
@@ -518,7 +534,7 @@ auto par_map(ThreadPool &pool, std::stop_token tok, std::vector<T> const &v,
 }
 
 template <class T, class F>
-Result<void> par_for_each(ThreadPool &pool, std::stop_token tok,
+[[nodiscard]] Result<void> par_for_each(ThreadPool &pool, std::stop_token tok,
                           std::vector<T> const &v, F f) {
   size_t n = v.size();
   size_t threads = std::max<size_t>(1, pool.size());
@@ -540,7 +556,7 @@ Result<void> par_for_each(ThreadPool &pool, std::stop_token tok,
 }
 
 template <class T, class F>
-Result<T> par_reduce(ThreadPool &pool, std::stop_token tok,
+[[nodiscard]] Result<T> par_reduce(ThreadPool &pool, std::stop_token tok,
                      std::vector<T> const &v, T init, F op) {
   size_t n = v.size();
   if (n == 0)

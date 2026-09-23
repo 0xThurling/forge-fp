@@ -128,6 +128,12 @@ tris.resize(std::min<std::size_t>(tris.size(), 10));
 their input order (e.g. deterministic tie-breaking in reports). The default
 `sort_by_inplace` is the faster unstable sort.
 
+`sort_by_cached_inplace` computes each key once into a scratch buffer and sorts
+that, then moves the elements back — one allocation, and measured ~1.4x faster
+than `sort_by_inplace` when the key allocates (a string built per comparison),
+at the cost of ~1.9x slower for a plain integer key. Keep `sort_by_inplace` for
+cheap keys.
+
 `unique_inplace` and `remove_if_inplace` shrink the container, so they are
 constrained to **erasable ranges** — containers with an `erase(first, last)`
 member (`std::vector`, `std::string`, `std::deque`). A raw array or a
@@ -147,7 +153,7 @@ auto kept = fp::filter(v, pred);
 | transform | `fp::map(v, f)` | `fp::transform_inplace(v, f)` |
 | transform into a buffer | `auto out = fp::map(...)` | `fp::map_to(v, out, f)` |
 | pairwise | `fp::zip_with(a, b, f)` | `fp::zip_for_each(a, b, f)` / `fp::zip_transform_inplace(a, b, f)` |
-| sort | `fp::sort(v)` / `fp::sort_by(v, k)` | `fp::sort_inplace(v)` / `fp::sort_by_inplace(v, k)` |
+| sort | `fp::sort(v)` / `fp::sort_by(v, k)` / `fp::sort_by_cached(v, k)` | `fp::sort_inplace(v)` / `fp::sort_by_inplace(v, k)` / `fp::sort_by_cached_inplace(v, k)` |
 | reverse | `fp::reverse(v)` | `fp::reverse_inplace(v)` |
 | dedup | `fp::unique(v)` | `fp::unique_inplace(v)` |
 | filter | `fp::filter(v, p)` | `fp::remove_if_inplace(v, !p)` |

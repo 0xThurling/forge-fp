@@ -47,7 +47,10 @@ std::vector<T> flatten(std::vector<std::vector<T>> const &g) {
   return out;
 }
 
-template <class F> void for_each_index(size_t rows, size_t cols, F f) {
+// Call f(i, j) for every cell of a rows x cols grid. (Named for_each_cell, not
+// for_each_index: inplace.hpp's for_each_index iterates a *range* with its
+// indices, and the two collided on nested vectors.)
+template <class F> void for_each_cell(size_t rows, size_t cols, F f) {
   for (size_t i = 0; i < rows; ++i)
     for (size_t j = 0; j < cols; ++j)
       f(i, j);

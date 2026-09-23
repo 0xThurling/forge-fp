@@ -2,6 +2,7 @@
 #pragma once
 #include "adt.hpp"
 #include "arena.hpp"
+#include "bits.hpp"
 #include "combinators.hpp"
 #include "compose.hpp"
 #include "concurrent.hpp"
@@ -23,6 +24,7 @@
 #include "print.hpp"
 #include "random.hpp"
 #include "ranges.hpp"
+#include "reflect.hpp"
 #include "result.hpp"
 #include "scope.hpp"
 #include "serialize.hpp"

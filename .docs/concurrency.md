@@ -45,6 +45,8 @@ auto work = [](int x) { return x * 2; };
 auto a = fp::par_map(v, work, 8);              // vector<int>
 fp::par_for_each(v, [](int x) { /* side effect */ }, 8);
 
+// standalone: creates its workers on every call (~tens of microseconds),
+// so use it for one-shot coarse work, not inside a loop
 // pool-based (reuse one pool, cheaper for repeated calls)
 fp::ThreadPool pool(8);
 auto b = fp::par_map(pool, v, work);           // vector<int>
@@ -90,8 +92,9 @@ int sum = fut.get();                              // 3
 
 ```cpp
 fp::Channel<int> ch(10);        // bounded to 10; 0 = unbounded
-ch.send(42);                    // blocks if full
-int x = ch.recv();              // blocks if empty
+ch.send(42);                    // blocks if full; throws on a closed channel
+int x = ch.recv();              // blocks if empty; throws on a closed+drained one
+bool ok = ch.try_send(7);       // non-blocking: false when full or closed
 auto y = ch.try_recv();         // optional<int>, non-blocking
 ch.close();                     // wake waiters; recv throws after drain
 ```

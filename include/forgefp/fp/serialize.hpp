@@ -34,7 +34,7 @@ std::string to_text(R const &r, int precision = 17) {
 
 template <class T>
   requires std::is_arithmetic_v<T>
-Result<std::vector<T>> from_text(std::string_view text) {
+[[nodiscard]] Result<std::vector<T>> from_text(std::string_view text) {
   std::istringstream is{std::string(text)};
   std::vector<T> out;
   T value{};
@@ -55,7 +55,7 @@ std::vector<std::byte> to_bytes(R const &r) {
 
 template <class T>
   requires std::is_trivially_copyable_v<T>
-Result<std::vector<T>> from_bytes(std::span<std::byte const> data) {
+[[nodiscard]] Result<std::vector<T>> from_bytes(std::span<std::byte const> data) {
   if (data.size() % sizeof(T) != 0)
     return err<std::vector<T>>(
         "from_bytes: size is not a multiple of the element size");

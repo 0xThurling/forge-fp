@@ -86,7 +86,7 @@ template <std::ranges::random_access_range R> auto enumerate(R &&r) {
   auto n = std::ranges::size(base);
   return std::views::iota(std::size_t{0}, n) |
          std::views::transform(
-             [base, n](std::size_t i) mutable
+             [base](std::size_t i) mutable
              -> std::pair<std::size_t, T> { return {i, base[i]}; });
 }
 

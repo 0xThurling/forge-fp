@@ -184,7 +184,7 @@ inline bool usable() {
 #endif
 }
 
-inline Result<DeviceInfo> default_device_info() {
+[[nodiscard]] inline Result<DeviceInfo> default_device_info() {
 #ifdef FP_GPU_SYCL
   try {
     const auto device = detail::queue().get_device();
@@ -204,7 +204,7 @@ inline Result<DeviceInfo> default_device_info() {
 #endif
 }
 
-inline Result<BackendInfo> backend_info() {
+[[nodiscard]] inline Result<BackendInfo> backend_info() {
 #ifdef FP_GPU_SYCL
   try {
     const auto device = detail::queue().get_device();
@@ -290,7 +290,7 @@ public:
   std::span<T> span() noexcept { return {data(), size_}; }
   std::span<T const> span() const noexcept { return {data(), size_}; }
 
-  static Result<HostBuffer<T>> alloc(std::size_t n) {
+  [[nodiscard]] static Result<HostBuffer<T>> alloc(std::size_t n) {
 #ifdef FP_GPU_SYCL
     if (n == 0)
       return ok(HostBuffer<T>{});
@@ -399,7 +399,7 @@ public:
 #endif
   }
 
-  Result<void> fill(T const &value) {
+  [[nodiscard]] Result<void> fill(T const &value) {
 #ifdef FP_GPU_SYCL
     if (size_ == 0)
       return ok<void>();
@@ -417,12 +417,12 @@ public:
   }
 
   // Device allocation (USM device memory under SYCL).
-  static Result<Buffer<T>> alloc(std::size_t n) { return make(n, false); }
+  [[nodiscard]] static Result<Buffer<T>> alloc(std::size_t n) { return make(n, false); }
 
   // Shared allocation: `data()` is host-accessible under SYCL.
-  static Result<Buffer<T>> alloc_shared(std::size_t n) { return make(n, true); }
+  [[nodiscard]] static Result<Buffer<T>> alloc_shared(std::size_t n) { return make(n, true); }
 
-  static Result<Buffer<T>> from_host(std::span<T const> src) {
+  [[nodiscard]] static Result<Buffer<T>> from_host(std::span<T const> src) {
 #ifdef FP_GPU_SYCL
     auto b = alloc(src.size());
     if (!b.is_ok() || src.empty())
@@ -447,7 +447,7 @@ public:
 #endif
   }
 
-  Result<std::vector<T>> to_host() const {
+  [[nodiscard]] Result<std::vector<T>> to_host() const {
 #ifdef FP_GPU_SYCL
     std::vector<T> out(size_);
     try {
@@ -466,7 +466,7 @@ public:
 
   // Read back into `staging` (no allocation); read the values through
   // `staging.span()`.
-  Result<void> to_host(HostBuffer<T> &staging) const {
+  [[nodiscard]] Result<void> to_host(HostBuffer<T> &staging) const {
     if (staging.size() < size_)
       return err<void>("gpu::to_host: staging buffer too small");
 #ifdef FP_GPU_SYCL
@@ -487,7 +487,7 @@ public:
   // Copy pinned staging into this buffer. This is the staging path with no
   // extra host copy: fill the staging block directly (`staging.span()`), then
   // move it once. Use it when the producer can write into pinned memory.
-  Result<void> copy_from(HostBuffer<T> const &staging) {
+  [[nodiscard]] Result<void> copy_from(HostBuffer<T> const &staging) {
     if (staging.size() < size_)
       return err<void>("gpu::copy_from: staging buffer too small");
 #ifdef FP_GPU_SYCL
@@ -505,7 +505,7 @@ public:
     return ok<void>();
   }
 
-  Result<Buffer<T>> clone() const {
+  [[nodiscard]] Result<Buffer<T>> clone() const {
     auto host = to_host();
     if (!host.is_ok())
       return err<Buffer<T>>(host.error());
@@ -513,7 +513,7 @@ public:
   }
 
 private:
-  static Result<Buffer<T>> make(std::size_t n, bool shared) {
+  [[nodiscard]] static Result<Buffer<T>> make(std::size_t n, bool shared) {
 #ifdef FP_GPU_SYCL
     if (n == 0)
       return ok(Buffer<T>{});
@@ -594,7 +594,7 @@ template <class T> struct Scratch {
 
 namespace detail {
 template <class T>
-Result<void> ensure_scratch(Scratch<T> &scratch, std::size_t chunks) {
+[[nodiscard]] Result<void> ensure_scratch(Scratch<T> &scratch, std::size_t chunks) {
   if (scratch.partials.size() < chunks) {
     auto p = Buffer<T>::alloc(chunks);
     if (!p.is_ok())
@@ -615,7 +615,7 @@ Result<void> ensure_scratch(Scratch<T> &scratch, std::size_t chunks) {
 
 // dst[i] = f(src[i]) over the common prefix; dst must be at least as large.
 template <class T, class F>
-Result<void> map_to(Buffer<T> &dst, Buffer<T> const &src, F f) {
+[[nodiscard]] Result<void> map_to(Buffer<T> &dst, Buffer<T> const &src, F f) {
   if (dst.size() < src.size())
     return err<void>("gpu::map_to: destination too small");
   if (src.empty())
@@ -641,7 +641,7 @@ Result<void> map_to(Buffer<T> &dst, Buffer<T> const &src, F f) {
 
 // buf[i] = f(buf[i]).
 template <class T, class F>
-Result<void> transform_inplace(Buffer<T> &buf, F f) {
+[[nodiscard]] Result<void> transform_inplace(Buffer<T> &buf, F f) {
   if (buf.empty())
     return ok<void>();
 #ifdef FP_GPU_SYCL
@@ -665,7 +665,7 @@ Result<void> transform_inplace(Buffer<T> &buf, F f) {
 // depend on position rather than value — attention's causal mask, positional
 // encodings, per-row scaling — where the lambda recovers (row, col) from `i`.
 template <class T, class F>
-Result<void> transform_inplace_indexed(Buffer<T> &buf, F f) {
+[[nodiscard]] Result<void> transform_inplace_indexed(Buffer<T> &buf, F f) {
   if (buf.empty())
     return ok<void>();
 #ifdef FP_GPU_SYCL
@@ -720,7 +720,7 @@ auto map(R const &src, F f)
 
 // y[i] += a * x[i] over the common prefix (the optimizer update kernel).
 template <class T>
-Result<void> axpy_inplace(Buffer<T> &y, T a, Buffer<T> const &x) {
+[[nodiscard]] Result<void> axpy_inplace(Buffer<T> &y, T a, Buffer<T> const &x) {
   if (y.size() < x.size())
     return err<void>("gpu::axpy_inplace: size mismatch");
   if (x.empty())
@@ -748,7 +748,7 @@ Result<void> axpy_inplace(Buffer<T> &y, T a, Buffer<T> const &x) {
 // a[i] = f(a[i], b[i]) over the common prefix; `a` must be at least as large.
 // The general two-input update (optimizer moments, gated activations, losses).
 template <class T, class F>
-Result<void> zip_transform_inplace(Buffer<T> &a, Buffer<T> const &b, F f) {
+[[nodiscard]] Result<void> zip_transform_inplace(Buffer<T> &a, Buffer<T> const &b, F f) {
   if (a.size() < b.size())
     return err<void>("gpu::zip_transform_inplace: size mismatch");
   if (b.empty())
@@ -775,7 +775,7 @@ Result<void> zip_transform_inplace(Buffer<T> &a, Buffer<T> const &b, F f) {
 // a[i] = f(a[i], b[i], c[i]) over the shortest prefix. The three-input update
 // (AdamW's `w -= lr * m / (sqrt(v) + eps)` without a temporary buffer).
 template <class T, class F>
-Result<void> zip3_transform_inplace(Buffer<T> &a, Buffer<T> const &b,
+[[nodiscard]] Result<void> zip3_transform_inplace(Buffer<T> &a, Buffer<T> const &b,
                                     Buffer<T> const &c, F f) {
   const std::size_t n = std::min(b.size(), c.size());
   if (a.size() < n)
@@ -804,7 +804,7 @@ Result<void> zip3_transform_inplace(Buffer<T> &a, Buffer<T> const &b,
 
 // Row-wise stable softmax, in place. `rows * cols` must equal `size()`.
 template <std::floating_point T>
-Result<void> softmax_rows(Buffer<T> &logits, std::size_t rows,
+[[nodiscard]] Result<void> softmax_rows(Buffer<T> &logits, std::size_t rows,
                           std::size_t cols) {
   if (rows * cols != logits.size())
     return err<void>("gpu::softmax_rows: shape mismatch");
@@ -849,7 +849,7 @@ Result<void> softmax_rows(Buffer<T> &logits, std::size_t rows,
 // case (rows = tokens, cols = keys). Without group algorithms (the CPU stub,
 // or FP_GPU_NO_GROUP_ALGORITHMS) it forwards to `softmax_rows`.
 template <std::floating_point T>
-Result<void> softmax_rows_wg(Buffer<T> &logits, std::size_t rows,
+[[nodiscard]] Result<void> softmax_rows_wg(Buffer<T> &logits, std::size_t rows,
                              std::size_t cols) {
   if (rows * cols != logits.size())
     return err<void>("gpu::softmax_rows_wg: shape mismatch");
@@ -911,7 +911,7 @@ Result<void> softmax_rows_wg(Buffer<T> &logits, std::size_t rows,
 // row_sums/row_means/col_sums and add_row_broadcast.
 
 template <class T>
-Result<Buffer<T>> row_sums(Buffer<T> const &buf, std::size_t rows,
+[[nodiscard]] Result<Buffer<T>> row_sums(Buffer<T> const &buf, std::size_t rows,
                            std::size_t cols) {
   if (buf.size() != rows * cols)
     return err<Buffer<T>>("gpu::row_sums: shape mismatch");
@@ -944,7 +944,7 @@ Result<Buffer<T>> row_sums(Buffer<T> const &buf, std::size_t rows,
 }
 
 template <class T>
-Result<Buffer<T>> row_means(Buffer<T> const &buf, std::size_t rows,
+[[nodiscard]] Result<Buffer<T>> row_means(Buffer<T> const &buf, std::size_t rows,
                             std::size_t cols) {
   if (buf.size() != rows * cols || cols == 0)
     return err<Buffer<T>>("gpu::row_means: shape mismatch");
@@ -979,7 +979,7 @@ Result<Buffer<T>> row_means(Buffer<T> const &buf, std::size_t rows,
 }
 
 template <class T>
-Result<Buffer<T>> col_sums(Buffer<T> const &buf, std::size_t rows,
+[[nodiscard]] Result<Buffer<T>> col_sums(Buffer<T> const &buf, std::size_t rows,
                            std::size_t cols) {
   if (buf.size() != rows * cols)
     return err<Buffer<T>>("gpu::col_sums: shape mismatch");
@@ -1015,7 +1015,7 @@ Result<Buffer<T>> col_sums(Buffer<T> const &buf, std::size_t rows,
 
 // buf[i][j] += bias[j] for every row (the bias-gradient shape).
 template <class T>
-Result<void> add_row_broadcast(Buffer<T> &buf, std::size_t rows,
+[[nodiscard]] Result<void> add_row_broadcast(Buffer<T> &buf, std::size_t rows,
                                std::size_t cols, Buffer<T> const &bias) {
   if (buf.size() != rows * cols || bias.size() != cols)
     return err<void>("gpu::add_row_broadcast: shape mismatch");
@@ -1055,7 +1055,7 @@ Result<void> add_row_broadcast(Buffer<T> &buf, std::size_t rows,
 // numbers in GPU.md).
 
 template <class T>
-Result<T> reduce(Buffer<T> const &buf, T init, Scratch<T> &scratch) {
+[[nodiscard]] Result<T> reduce(Buffer<T> const &buf, T init, Scratch<T> &scratch) {
   if (buf.empty())
     return ok(std::move(init));
 #ifdef FP_GPU_SYCL
@@ -1102,7 +1102,7 @@ template <class T> Result<T> reduce(Buffer<T> const &buf, T init = T{}) {
 }
 
 template <class T>
-Result<T> dot(Buffer<T> const &a, Buffer<T> const &b, Scratch<T> &scratch) {
+[[nodiscard]] Result<T> dot(Buffer<T> const &a, Buffer<T> const &b, Scratch<T> &scratch) {
   if (a.size() != b.size())
     return err<T>("gpu::dot: size mismatch");
   if (a.empty())
@@ -1158,7 +1158,7 @@ template <class T> Result<T> dot(Buffer<T> const &a, Buffer<T> const &b) {
 namespace detail {
 // CPU fallback for matmul: flat row-major grids through fp::matmul.
 template <class T>
-Result<Buffer<T>> matmul_host(std::span<T const> a, std::span<T const> b,
+[[nodiscard]] Result<Buffer<T>> matmul_host(std::span<T const> a, std::span<T const> b,
                               std::size_t m, std::size_t k, std::size_t n) {
   std::vector<std::vector<T>> ga(m, std::vector<T>(k));
   std::vector<std::vector<T>> gb(k, std::vector<T>(n));
@@ -1176,7 +1176,7 @@ Result<Buffer<T>> matmul_host(std::span<T const> a, std::span<T const> b,
 }
 // CPU fallback for transpose: the flat block through fp::transpose.
 template <class T>
-Result<Buffer<T>> transpose_host(std::span<T const> src, std::size_t rows,
+[[nodiscard]] Result<Buffer<T>> transpose_host(std::span<T const> src, std::size_t rows,
                                  std::size_t cols) {
   std::vector<std::vector<T>> grid(rows, std::vector<T>(cols));
   for (std::size_t r = 0; r < rows; ++r)
@@ -1201,7 +1201,7 @@ Result<Buffer<T>> transpose_host(std::span<T const> src, std::size_t rows,
 // Attention needs it for `Q @ Kᵀ`; the tiled kernel keeps both the reads and
 // the writes coalesced through a 16x16 local tile.
 template <class T>
-Result<Buffer<T>> transpose(Buffer<T> const &src, std::size_t rows,
+[[nodiscard]] Result<Buffer<T>> transpose(Buffer<T> const &src, std::size_t rows,
                             std::size_t cols) {
   if (src.size() != rows * cols)
     return err<Buffer<T>>("gpu::transpose: shape mismatch");
@@ -1259,7 +1259,7 @@ Result<Buffer<T>> transpose(Buffer<T> const &src, std::size_t rows,
 }
 
 template <class T>
-Result<Buffer<T>> batched_matmul(Buffer<T> const &a, Buffer<T> const &b,
+[[nodiscard]] Result<Buffer<T>> batched_matmul(Buffer<T> const &a, Buffer<T> const &b,
                                  std::size_t batches, std::size_t m,
                                  std::size_t k, std::size_t n) {
   if (a.size() != batches * m * k || b.size() != batches * k * n)
@@ -1361,7 +1361,7 @@ Result<Buffer<T>> batched_matmul(Buffer<T> const &a, Buffer<T> const &b,
 }
 
 template <class T>
-Result<Buffer<T>> matmul(Buffer<T> const &a, Buffer<T> const &b, std::size_t m,
+[[nodiscard]] Result<Buffer<T>> matmul(Buffer<T> const &a, Buffer<T> const &b, std::size_t m,
                          std::size_t k, std::size_t n) {
   return batched_matmul(a, b, 1, m, k, n);
 }

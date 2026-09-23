@@ -165,6 +165,17 @@ also fail.
 | `try_` | wraps a throwing call in a `Result` | `fp::try_([&]{ ... })` |
 | `map`/`and_then`/`or_else` | the shared ADT vocabulary | (works on `Result`, `optional`, `Either`, `Validation`) |
 
+## Conventions and guarantees
+
+| Concern | Rule |
+|---|---|
+| Errors | Fallible functions return `Result`/`Outcome`/`Validation`, and those returns are `[[nodiscard]]`. Exceptions are reserved for programmer errors and for blocking primitives (`Channel::send`/`recv`). |
+| Allocation | Eager combinators return fresh containers; the `*_inplace` family and `map_to`/`par_map_to` write into storage you own. |
+| Thread safety | Containers and algorithms hold no hidden shared state. `ThreadPool`, `Channel`, `RingBuffer` and `Actor` are made to be shared. `Rng` and `memoize` are not synchronized — keep one per thread. |
+| `noexcept` | The arithmetic operators in `fp::ops` and the pointer/utility helpers in `memory.hpp` are `noexcept`. Generic algorithms are deliberately **not** annotated: they call your callables, which may throw. |
+| Preconditions | Shape and index preconditions are documented and `assert`ed in debug builds instead of being returned as errors. |
+| Performance | Hot kernels have benchmarks in `bench/`; surprising costs are written down (e.g. `sort_by` vs `sort_by_cached` in [Collections](collections.md), parser erasure in [Parsing](parsing.md)). |
+
 ## Opt-in headers
 
 `all.hpp` deliberately stops short of four headers:

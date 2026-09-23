@@ -1,6 +1,7 @@
 #include <fp/all.hpp>
 
 #include <gtest/gtest.h>
+#include <cctype>
 #include <string>
 #include <variant>
 #include <vector>
@@ -122,4 +123,33 @@ TEST(Parse, RecursiveJson) {
   auto r = run(value, R"([1, 2, [3, 4]])");
   ASSERT_TRUE(r.is_ok());
   EXPECT_EQ(std::get<Json::Array>(r.value().v).size(), 3u);
+}
+
+TEST(Parse, ScanWhileScansTokens) {
+  auto is_digit = [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; };
+  auto token = fp::scan_while1(is_digit);
+  auto r = token("1234abc", 0);
+  ASSERT_TRUE(r.is_ok());
+  EXPECT_EQ(r.value().first, "1234");
+  EXPECT_EQ(r.value().second, "abc");
+
+  // take_while may match nothing; take_while1 must not
+  auto opt = fp::scan_while(is_digit);
+  auto empty = opt("abc", 0);
+  ASSERT_TRUE(empty.is_ok());
+  EXPECT_TRUE(empty.value().first.empty());
+  EXPECT_FALSE(token("abc", 0).is_ok());
+
+  // a full token list, without the vector<char> that many() would build
+  auto number = fp::map(token, [](std::string_view ds) {
+    unsigned v = 0;
+    for (char c : ds)
+      v = v * 10 + static_cast<unsigned>(c - '0');
+    return v;
+  });
+  auto list = fp::sep_by(number, fp::char_(','));
+  auto parsed = list("12,7,900", 0);
+  ASSERT_TRUE(parsed.is_ok());
+  EXPECT_EQ(parsed.value().first, (std::vector<unsigned>{12, 7, 900}));
+  EXPECT_TRUE(parsed.value().second.empty());
 }

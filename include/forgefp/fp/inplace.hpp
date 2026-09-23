@@ -6,6 +6,7 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace fp {
 
@@ -103,6 +104,22 @@ void stable_sort_by_inplace(R &r, Key key) {
                    [&key](auto const &a, auto const &b) {
                      return key(a) < key(b);
                    });
+}
+
+// Sort with the keys computed once; costs one scratch buffer and wins when the
+// key is expensive (see vec.hpp's sort_by_cached for the measurements).
+template <std::ranges::random_access_range R, class Key>
+void sort_by_cached_inplace(R &r, Key key) {
+  using T = std::ranges::range_value_t<R>;
+  using K = std::invoke_result_t<Key, T>;
+  std::vector<std::pair<K, T>> keyed;
+  keyed.reserve(static_cast<std::size_t>(std::ranges::size(r)));
+  for (auto &x : r)
+    keyed.emplace_back(key(x), std::move(x));
+  std::ranges::stable_sort(keyed, {}, &std::pair<K, T>::first);
+  auto it = std::ranges::begin(r);
+  for (auto &kv : keyed)
+    *it++ = std::move(kv.second);
 }
 
 // Containers that can shrink (vector, string, ...).

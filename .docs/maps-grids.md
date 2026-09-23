@@ -93,7 +93,7 @@ std::vector<std::vector<int>> g = {{1, 2, 3}, {4, 5, 6}};
 | `flatten(g)` | `vector<vector<T>>` → `vector<T>` |
 | `column(g, j)` | column `j` as a vector (copy; columns are strided) |
 | `windows2d(g, kh, kw)` | non-overlapping `kh x kw` patches |
-| `for_each_index(rows, cols, f)` | call `f(i, j)` for every cell |
+| `for_each_cell(rows, cols, f)` | call `f(i, j)` for every cell |
 | `tabulate(n, f)` | `{f(0), f(1), …, f(n-1)}` |
 | `cartesian_product(as, bs)` | all `(a, b)` pairs |
 
@@ -102,7 +102,7 @@ fp::map2d(g, fp::plus(1));            // {{2,3,4},{5,6,7}}
 fp::transpose(g);                     // {{1,4},{2,5},{3,6}}
 fp::flatten(g);                       // {1,2,3,4,5,6}
 
-fp::for_each_index(2, 3, [](size_t i, size_t j) { /* visit g[i][j] */ });
+fp::for_each_cell(2, 3, [](size_t i, size_t j) { /* visit g[i][j] */ });
 
 fp::tabulate(5, [](size_t i) { return i * i; });        // {0,1,4,9,16}
 
@@ -149,7 +149,7 @@ auto patches = fp::windows2d(image, 2, 2);
 ```
 
 For overlapping windows with a stride, walk the top-left corner yourself with
-`for_each_index` and copy the `kh x kw` block — `windows2d` is deliberately the
+`for_each_cell` and copy the `kh x kw` block — `windows2d` is deliberately the
 simple, non-overlapping case.
 
 ### Worked example: a 3x3 box blur
@@ -159,7 +159,7 @@ std::vector<std::vector<double>> blur(std::vector<std::vector<double>> const &sr
   const std::size_t rows = src.size(), cols = src[0].size();
   std::vector<std::vector<double>> out(rows, std::vector<double>(cols, 0.0));
 
-  fp::for_each_index(rows, cols, [&](std::size_t i, std::size_t j) {
+  fp::for_each_cell(rows, cols, [&](std::size_t i, std::size_t j) {
     double sum = 0.0;
     int count = 0;
     for (int di = -1; di <= 1; ++di) {
@@ -179,12 +179,12 @@ std::vector<std::vector<double>> blur(std::vector<std::vector<double>> const &sr
 }
 ```
 
-The nested loops are the kernel; `for_each_index` owns the outer traversal and
+The nested loops are the kernel; `for_each_cell` owns the outer traversal and
 keeps the bounds handling in one place.
 
 **Why grids matter:** index-space work (render passes, image kernels, matrix
 transpose) is nested `for (i) for (j)` loops — the one shape `vec.hpp`/`ranges.hpp`
-(which are flat) don't cover. `map2d`/`transpose`/`for_each_index` turn those
+(which are flat) don't cover. `map2d`/`transpose`/`for_each_cell` turn those
 nested loops into one call; `flatten` hands the result back to the flat
 combinators. `tabulate` + `cartesian_product` are the declarative
 nested-loop makers, and `map2d_indexed`/`windows2d` cover the two cases that
@@ -203,6 +203,6 @@ see [`linalg`](linalg.md#reductions).
   `col_sums` instead.
 - **`windows2d` drops incomplete edges** (no padding). Add padding to the grid
   first if you need every cell covered.
-- **`for_each_index` takes `(rows, cols)`**, not a grid — it works for
+- **`for_each_cell` takes `(rows, cols)`**, not a grid — it works for
   index-space algorithms that compute values from the indices alone.
 - **`map2d_inplace` mutates; `map2d` copies.** The name tells you which.

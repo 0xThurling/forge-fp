@@ -14,7 +14,7 @@ namespace fp {
 
 // Read one line from `in` (default stdin). Blocks until a newline or EOF.
 // Errors: "end of input" at EOF, "input error" on stream failure.
-inline Result<std::string> read_line(std::istream &in = std::cin) {
+[[nodiscard]] inline Result<std::string> read_line(std::istream &in = std::cin) {
   std::string line;
   if (std::getline(in, line))
     return ok(std::move(line));
@@ -24,9 +24,24 @@ inline Result<std::string> read_line(std::istream &in = std::cin) {
 }
 
 // Read all of `in` into one string.
-inline Result<std::string> read_all(std::istream &in = std::cin) {
-  std::string out((std::istreambuf_iterator<char>(in)),
-                  std::istreambuf_iterator<char>());
+[[nodiscard]] inline Result<std::string> read_all(std::istream &in = std::cin) {
+  std::string out;
+  // Seekable input (the common case): size the buffer, then one bulk read.
+  // Reading through istreambuf_iterator instead costs a virtual call per byte.
+  if (in.seekg(0, std::ios::end)) {
+    const auto size = in.tellg();
+    if (size > 0) {
+      out.resize(static_cast<std::size_t>(size));
+      in.seekg(0, std::ios::beg);
+      in.read(out.data(), static_cast<std::streamsize>(out.size()));
+      out.resize(static_cast<std::size_t>(in.gcount()));
+    }
+  } else {
+    // Not seekable (a pipe, /proc, ...): clear the failed seek and stream it.
+    in.clear();
+    out.assign(std::istreambuf_iterator<char>(in),
+               std::istreambuf_iterator<char>());
+  }
   if (in.bad())
     return err<std::string>("input error");
   return ok(std::move(out));
@@ -46,7 +61,7 @@ inline Stream<std::string> read_lines(std::istream &in = std::cin) {
 // Read one character from `in`. Note: a terminal line-buffers by default, so
 // this blocks until a newline unless the terminal is in raw mode (see
 // `raw_mode`/`read_key` below).
-inline Result<char> read_char(std::istream &in = std::cin) {
+[[nodiscard]] inline Result<char> read_char(std::istream &in = std::cin) {
   auto c = in.get();
   if (c == std::char_traits<char>::eof())
     return in.eof() ? err<char>("end of input") : err<char>("input error");
@@ -76,7 +91,7 @@ inline void feed_lines(Channel<std::string> &ch, std::istream &in = std::cin) {
 // Toggle terminal raw mode (no echo, no line buffering) for single-keypress
 // reading. Pair the calls: raw_mode(true) ... raw_mode(false). The original
 // terminal state is saved on first enable and restored on disable.
-inline Result<void> raw_mode(bool on) {
+[[nodiscard]] inline Result<void> raw_mode(bool on) {
   static termios original;
   static bool saved = false;
   if (on) {
@@ -96,7 +111,7 @@ inline Result<void> raw_mode(bool on) {
 
 // Read a single keypress in raw mode (POSIX). Returns immediately — no newline
 // and no echo. Call raw_mode(true) first.
-inline Result<char> read_key() {
+[[nodiscard]] inline Result<char> read_key() {
   char c = 0;
   ssize_t n = ::read(STDIN_FILENO, &c, 1);
   if (n <= 0)

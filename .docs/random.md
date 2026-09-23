@@ -23,7 +23,7 @@ rng.uniform(0.0, 1.0);          // real interval [lo, hi)
 rng.normal(0.0, 1.0);           // Gaussian
 rng.bernoulli(0.3);             // true with probability p
 rng.shuffle(v);                 // Fisher-Yates, in place
-rng.sample_indices(n, k);       // k distinct indices from [0, n)
+rng.sample_indices(n, k);       // k distinct indices from [0, n); O(k) when k << n
 rng.categorical(weights);       // weighted choice, weights need not sum to 1
 rng.weighted_choice(weights);   // alias of categorical
 rng.seed();                     // the seed it was constructed with
@@ -125,3 +125,8 @@ for (double &m : mask)
   reuse the same call pattern.
 - **`uniform(lo, hi)` is half-open** `[lo, hi)`; `randint(lo, hi)` is closed
   `[lo, hi]`. The difference matters at the edges.
+- **One `Rng` per thread.** It holds a `std::mt19937_64` by value and is not
+  synchronized; sharing one across threads is a data race. Seed each thread's
+  generator differently (e.g. `base_seed + thread_index`).
+- **`sample_indices` is O(k) for sparse draws** (rejection sampling into a set)
+  and O(n) only when `k >= n/4`, where the Fisher-Yates prefix wins.

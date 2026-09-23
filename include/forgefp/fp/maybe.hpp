@@ -25,7 +25,7 @@ template <class T> T or_else(std::optional<T> const &o, T fallback) {
 }
 
 template <class T, class F>
-std::optional<T> filter(std::optional<T> const &o, F pred) {
+[[nodiscard]] std::optional<T> filter(std::optional<T> const &o, F pred) {
   if (o && pred(*o))
     return o;
   return std::nullopt;
@@ -36,7 +36,7 @@ template <class T, class F> T or_else(std::optional<T> const &o, F fallback) {
 }
 
 template <class T>
-std::optional<T> flatten(std::optional<std::optional<T>> const &o) {
+[[nodiscard]] std::optional<T> flatten(std::optional<std::optional<T>> const &o) {
   if (!o) {
     return std::nullopt;
   }
@@ -53,7 +53,7 @@ auto apply(std::optional<F> const &of, std::optional<T> const &o)
 }
 
 template <class T>
-std::optional<std::vector<T>> collect(std::vector<std::optional<T>> const &os) {
+[[nodiscard]] std::optional<std::vector<T>> collect(std::vector<std::optional<T>> const &os) {
   std::vector<T> out;
   out.reserve(os.size());
   for (auto const &o : os) {

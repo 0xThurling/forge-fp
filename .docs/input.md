@@ -28,6 +28,9 @@ uses, so input composes with the error channel instead of interrupting it.
 | `raw_mode(on)` *(POSIX)* | `Result<void>` — toggle raw terminal mode |
 | `read_key()` *(POSIX)* | `Result<char>` — a single keypress, no Enter |
 
+`read_all` checks whether the stream is seekable: for files it sizes the
+buffer and issues one bulk read, for pipes it streams through the buffer.
+
 ## Reading lines
 
 ```cpp

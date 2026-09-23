@@ -21,7 +21,7 @@ template <class T> Validation<T> invalid(std::vector<std::string> msgs) {
 }
 
 template <class T>
-Validation<std::vector<T>> validate_all(std::vector<Validation<T>> const &vs) {
+[[nodiscard]] Validation<std::vector<T>> validate_all(std::vector<Validation<T>> const &vs) {
   std::vector<std::string> errs;
   std::vector<T> out;
 
@@ -55,7 +55,7 @@ template <class T> Validation<T> ensure(bool ok, std::string msg, T value) {
 }
 
 template <class T, class Pred>
-Validation<T> check(Pred pred, std::string msg, T value) {
+[[nodiscard]] Validation<T> check(Pred pred, std::string msg, T value) {
   return pred(value) ? valid<T>(std::move(value)) : invalid<T>(std::move(msg));
 }
 
@@ -100,7 +100,7 @@ template <class F, class... Vs> auto combine(F on_success, Vs const &...vs) {
 }
 
 template <class T>
-Validation<T> merge(Validation<T> const &a, Validation<T> const &b) {
+[[nodiscard]] Validation<T> merge(Validation<T> const &a, Validation<T> const &b) {
   if (a.is_ok() && b.is_ok())
     return valid(a.value());
   std::vector<std::string> errors;
@@ -120,7 +120,7 @@ template <class T> Result<T> to_result(Validation<T> const &v) {
 }
 
 template <class T, class Pred>
-Validation<std::vector<T>> validate_none(std::vector<T> const &vs, Pred pred,
+[[nodiscard]] Validation<std::vector<T>> validate_none(std::vector<T> const &vs, Pred pred,
                                          std::string msg) {
   std::vector<std::string> errors;
   for (auto const &x : vs)
@@ -132,7 +132,7 @@ Validation<std::vector<T>> validate_none(std::vector<T> const &vs, Pred pred,
 }
 
 template <class T, class Pred>
-Validation<std::vector<T>> validate_any(std::vector<T> const &vs, Pred pred,
+[[nodiscard]] Validation<std::vector<T>> validate_any(std::vector<T> const &vs, Pred pred,
                                         std::string msg) {
   for (auto const &x : vs)
     if (pred(x))

@@ -24,7 +24,7 @@ template <class T> Result<T> err(std::string msg) {
 }
 
 template <class T>
-Result<std::vector<T>> sequence(std::vector<Result<T>> const &rs) {
+[[nodiscard]] Result<std::vector<T>> sequence(std::vector<Result<T>> const &rs) {
   std::vector<T> out;
   out.reserve(rs.size());
   for (auto const &r : rs) {
@@ -36,12 +36,12 @@ Result<std::vector<T>> sequence(std::vector<Result<T>> const &rs) {
 }
 
 template <class T>
-Result<T> from_optional(std::optional<T> const &o, std::string msg) {
+[[nodiscard]] Result<T> from_optional(std::optional<T> const &o, std::string msg) {
   return o ? ok(*o) : err<T>(std::move(msg));
 }
 
 template <class T>
-Result<std::optional<T>> transpose(std::optional<Result<T>> const &o) {
+[[nodiscard]] Result<std::optional<T>> transpose(std::optional<Result<T>> const &o) {
   if (!o)
     return ok(std::optional<T>{std::nullopt});
   if (!o->is_ok())
@@ -50,7 +50,7 @@ Result<std::optional<T>> transpose(std::optional<Result<T>> const &o) {
 }
 
 template <class T>
-std::optional<Result<T>> transpose(Result<std::optional<T>> const &r) {
+[[nodiscard]] std::optional<Result<T>> transpose(Result<std::optional<T>> const &r) {
   if (!r.is_ok())
     return Result<T>::err(r.error());
   return r.value() ? std::optional<Result<T>>(ok<T>(*r.value())) : std::nullopt;
@@ -86,7 +86,7 @@ traverse(std::vector<T> const &v, F f) {
 }
 
 template <class A, class B>
-Result<std::pair<A, B>> combine2(Result<A> const &a, Result<B> const &b) {
+[[nodiscard]] Result<std::pair<A, B>> combine2(Result<A> const &a, Result<B> const &b) {
   if (!a.is_ok())
     return err<std::pair<A, B>>(a.error());
   if (!b.is_ok())
@@ -95,12 +95,12 @@ Result<std::pair<A, B>> combine2(Result<A> const &a, Result<B> const &b) {
 }
 
 template <class T>
-Result<T> context(Result<T> const &r, std::string const &prefix) {
+[[nodiscard]] Result<T> context(Result<T> const &r, std::string const &prefix) {
   return map_error(r, [&](std::string const &e) { return prefix + e; });
 }
 
 template <class T>
-Result<std::vector<T>> collect_all(std::vector<Result<T>> const &rs) {
+[[nodiscard]] Result<std::vector<T>> collect_all(std::vector<Result<T>> const &rs) {
   std::vector<T> values;
   std::vector<std::string> errors;
   for (auto const &r : rs) {
@@ -132,7 +132,7 @@ std::expected<T, std::string> to_expected(Result<T> const &r) {
 }
 
 template <class T>
-Result<T> from_expected(std::expected<T, std::string> const &e) {
+[[nodiscard]] Result<T> from_expected(std::expected<T, std::string> const &e) {
   return e ? ok(*e) : err<T>(e.error());
 }
 #endif

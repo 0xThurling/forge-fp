@@ -57,6 +57,33 @@ and independent (`serialize`, `autodiff`).
   in `fp::ad` so they never collide with `fp::ops`, `fp::derivative`; opt-in
   like `simd.hpp`, not in `all.hpp`). Tests: `test/serialize_test.cpp`,
   `test/autodiff_test.cpp`.
+- **Wave 7 landed**: `bits.hpp` (`bytes_of`/`as_bytes`/`word_at`; `bit`,
+  `set_bit`, `clear_bit`, `toggle_bit`; `low_mask`, `bit_mask`,
+  `extract_bits`, `insert_bits`; `popcount`, `count_zeros`, `leading_zeros`,
+  `trailing_zeros`, `bit_width`, `has_single_bit`; `rotl`/`rotr`, `byteswap`,
+  `sign_bit`; `to_little_endian`/`from_little_endian`/`to_big_endian`/
+  `from_big_endian`; whole-value `bit_not`/`bit_and`/`bit_or`/`bit_xor`;
+  `bit_reverse`, `to_binary`, `to_hex`; `bit_span`/`const_bit_span` (views of a
+  bit range of an object or of bytes — including `unsigned char`/`char`
+  buffers — with `read`/`write`, indexing, iteration, `section`/`split`,
+  memmove-semantics `copy_from`, `fill`/`flip`/`popcount`/`any`/`all`/`none`,
+  and `find_first_set`/`first_clear`/`next_set`/`next_clear`/`last_set`);
+  `bit_field<Lo,Hi>` and `bit_split<Widths...>` compile-time fields; and the
+  packed streams — `BitWriter`/`MsbWriter` and `BitReader`/`MsbReader` with a
+  per-type `BitOrder` plus a per-call override (so formats that mix orders,
+  like DEFLATE, are expressible), `align_to_byte`, `write(span)`,
+  `read_into`, `peek_bits`, `release`, and readers bounded to a section) and
+  `reflect.hpp` (macro-free, RTTI-free dynamic reflection: `arity`, `field_at`,
+  `field_type`, `field_name`, `fields`, `describe`, `type_info` +
+  `TypeRegistry` with lock-free reads, `AnyRef` with `field`/`get_field`/
+  `set_field`/`for_each_field`/`for_each_field_ref`, whole-object `to_string`/
+  `equal`/`copy_fields`, compile-time `has_field`/`field_index`,
+  `describe_shape<T>()` for name-free metadata, enum name/value mapping, and the
+  `FieldAccess` opt-in for non-aggregates plus the `members<...>` helper). Tests: `test/bits_test.cpp`, `test/reflect_test.cpp`;
+  benchmark: `bench/bits_bench.cpp`. Both modules are in `all.hpp` and the
+  `include/forgefp/fp/` mirror; neither uses macros or RTTI, and field names are
+  recovered at compile time on GCC/Clang (Boost.PFR's technique) with a
+  `fieldN` fallback elsewhere.
 
 **All planned waves are landed.** Every module in the map above is implemented
 in both header trees, with tests; the zero-cost claims are backed by
@@ -654,6 +681,67 @@ template <class F, class T = double> T derivative(F f, T x);
 
 - Reverse-mode (parameter graphs, layers) stays in `ml/nn`: it is a domain
   concern, not a general numeric one.
+
+---
+
+## Wave 8 — post-audit polish
+
+A whole-library audit (correctness, performance, ergonomics, process) landed as
+a polish wave — no new modules, but one deliberate rename and several measured
+changes.
+
+### Correctness
+
+| Fix | Where |
+|---|---|
+| `fp::unique` passed its third argument in the predicate slot (`std::unique(first, last, last)`), deduplicating with a nonsense predicate whenever `vec.hpp` was the header in scope. | `vec.hpp` |
+| `ranges::span` walked the range twice (`find_if_not` + a second pass); input ranges cannot survive that. Now one pass. | `ranges.hpp` |
+| `ranges::windows(r, 0)` produced nothing useful and shifted the buffer with `erase(begin())` (O(n) per element). Now empty for `n == 0`, ring buffer otherwise. | `ranges.hpp` |
+| `grid.hpp`'s `for_each_index(rows, cols, f)` collided with `inplace.hpp`'s `for_each_index(range, f)` and silently won resolution for nested vectors. **Renamed to `for_each_cell`.** | `grid.hpp` |
+| `inplace.hpp` used `std::vector` without including `<vector>` (self-containment). | `inplace.hpp` |
+
+### Performance (measured, not assumed)
+
+| Change | Result |
+|---|---|
+| `read_file`/`read_all` size a seekable stream and issue one bulk read; `istreambuf_iterator` remains the pipe fallback. | removes one virtual call per byte |
+| `Parser`: new `scan_while`/`scan_while1` primitives yield `string_view` slices instead of a `vector<char>` per token (`bench/parse_bench.cpp`). | 137 µs → 31 µs for 2 000 ints (16x → 3.4x a hand-written loop) |
+| `matmul` flat-span overload (`matmul(a, m, k, b, n)`). | 2x faster than the nested form at 128³ |
+| `sample_indices` samples by rejection when `k < n/4`. | O(n) → O(k) for sparse draws |
+| `sort_by_cached`/`sort_by_cached_inplace`: keys computed once. | 1.4x faster for allocating keys, 1.9x slower for `int` keys — hence a separate function, not a change to `sort_by` |
+| Reserves where the size is known (`take`/`drop`/`scan`/`zip`/`enumerate`, `str::split`, `read_lines`). | fewer reallocations |
+
+### Ergonomics
+
+- Error-valued returns (`Result`/`Outcome`/`Validation` and optional-returning
+  lookups) are `[[nodiscard]]` — 124 declarations; the test suite compiles
+  warning-free.
+- `Channel::try_send` (non-blocking send; `false` when full or closed).
+- `io.hpp` path parameters take `std::string_view`.
+- `fp::ops` arithmetic operators are `noexcept`.
+- `bench/bits_bench.cpp` and `bench/parse_bench.cpp` wired into the bench run.
+
+### Process
+
+- `test/api_vec_test.cpp`, `test/api_ranges_test.cpp`,
+  `test/api_grid_test.cpp` instantiate each module with **only that module
+  included**, and `test/parity_test.cpp` asserts the `vec`/`ranges` shared
+  combinators agree — the regression net for the `unique` class of bug.
+- `.docs/getting-started.md` gained a "Conventions and guarantees" table
+  (errors, allocation, thread safety, `noexcept`, preconditions, performance).
+
+### Deliberately not done
+
+- **Collapsing the `vec`/`ranges` duplication into one implementation.** Both
+  headers are meant to work standalone; after fixing the divergences, the
+  maintenance win did not justify a layering refactor of the two most-used
+  headers. Parity tests enforce agreement instead, and `ranges.hpp` stays the
+  recommended surface for new code.
+- **De-erasing `Parser<T>`.** Templating the parser on its callable is the real
+  fix for the remaining ~3.4x gap, but it changes the type of every parser.
+  `scan_while` plus the benchmark make the cost visible and avoidable.
+- **A blanket `noexcept` sweep.** Generic algorithms call user callables, which
+  may throw; only genuinely non-throwing code is annotated.
 
 ---
 
