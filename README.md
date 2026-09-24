@@ -102,7 +102,7 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `bits.hpp` | **values** `bit`/`set_bit`/`clear_bit`/`toggle_bit`, `low_mask`/`bit_mask`/`extract_bits`/`insert_bits`, `popcount`/`leading_zeros`/`trailing_zeros`/`bit_width`, `rotl`/`rotr`/`byteswap`/`bit_reverse`/`sign_bit`, `to_little_endian`/`to_big_endian`, whole-value `bit_and`/`bit_or`/`bit_xor`/`bit_not`; **bytes** `bytes_of`/`as_bytes`/`word_at`; **sections** `bit_span`/`const_bit_span` (read/write, indexing, iteration, `section`/`split`, memmove `copy_from`, `fill`/`flip`/`popcount`/`any`/`all`/`none`, `find_first_set`/`first_clear`/`next_set`/`next_clear`/`last_set`) and compile-time `bit_field`/`bit_split`; **streams** `BitWriter`/`MsbWriter` + `BitReader`/`MsbReader` (`BitOrder`, per-call override, `align_to_byte`, `write(span)`/`read_into`/`peek_bits`/`release`, bounded readers); **text** `to_binary`/`to_hex` |
 | `combinators.hpp` | `identity`, `const_`, `flip`, `on`, `compose`, `fix`, `apply`, `when`/`unless`, `first`/`second`, `pipe_with` |
 | `compose.hpp` | `compose`, `pipe`, `into`/`out`, `operator\|`, `tap` |
-| `concurrent.hpp` | `ThreadPool`, `par_map`/`par_for_each`/`par_reduce`, `Channel`, `RingBuffer`, `Actor`, `Async`, `async_map`/`async_sequence`, `race`/`timeout`/`retry`, cancellable overloads + `spawn`/`async_task` |
+| `concurrent.hpp` | `ThreadPool` (`enqueue`/`submit`), `par_map`/`par_for_each`/`par_reduce`/`par_for`/`par_map_to`, `Channel`, `RingBuffer`, `Actor`, `Async`, `async_map`/`async_sequence`, `race`/`timeout`/`retry`, cancellable overloads + `spawn`/`async_task` |
 | `curry.hpp` | `curry`, `uncurry` |
 | `either.hpp` | `Either<E, T>` (incl. `Either<E, void>`) + `map`/`and_then`/`or_else`/`map_error`/`flatten`/`bimap`/`swap`/`to_optional`/`rights`/`lefts`/`expect`/`ok_or`/`tap_err`/`tap_ok`/`>>=` |
 | `error.hpp` | `Error` (code + message + cause chain + `source_location`), `Outcome<T>` = `Either<Error,T>`, `error`/`with_context`/`root_cause`/`to_string`, `to_result`/`from_result`, `fp::errc::*` |
@@ -110,7 +110,7 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `inplace.hpp` | in-place algorithms on any range: `for_each`/`for_each_index`/`transform_inplace`/`fill`/`map_to`/`zip_for_each`/`zip3_for_each`/`sort_inplace`/`sort_by_inplace`/`sort_by_cached_inplace`/`stable_sort_by_inplace`/`reverse_inplace`/`unique_inplace`/`remove_if_inplace` |
 | `input.hpp` | `read_line`/`read_all`/`read_lines`/`read_char`/`read_chars`/`feed_lines`, POSIX `raw_mode`/`read_key` |
 | `io.hpp` | `read_file`, `read_lines`, `write_file` |
-| `linalg.hpp` | dense kernels over nested ranges and spans: `matmul` (nested and flat-buffer), `batched_matmul`, `matvec`/`outer`/`hadamard`, `dot`/`norm_l1`/`norm_l2`/`mean`/`variance`/`scale`, `row_sums`/`col_sums`/`row_means`/`col_means`/`argmax_rows`/`argmin_rows`, `solve` |
+| `linalg.hpp` | dense kernels over nested ranges and spans: `matmul` (nested and flat-buffer, 4x4-blocked and vectorized), `batched_matmul`, `matvec`/`outer`/`hadamard`, `dot`/`norm_l1`/`norm_l2`/`mean`/`variance`/`scale`, `row_sums`/`col_sums`/`row_means`/`col_means`/`argmax_rows`/`argmin_rows`, `solve` |
 | `macros.hpp` | `FP_TRY` *(opt-in)* |
 | `map.hpp` | `lookup`, `map_values`, `filter_values`, `merge_with`, `keys`, `values`, `to_map`, `to_unordered_map` (all generic over `std::map`/`std::unordered_map`) |
 | `maybe.hpp` | `std::optional` combinators: `map`/`and_then`/`or_else`/`filter`/`flatten`/`apply`/`collect`/`value_or_lazy`/`>>=` |
@@ -120,7 +120,7 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `ops.hpp` | named operators: `plus`/`minus`/`times`/`divide`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, `and_`/`or_`/`not_`, `negate`/`increment`/`decrement`, elementwise math (`abs`/`sqrt`/`exp`/`log`/`log1p`/`sin`/`cos`/`tanh`/`sign`), `min_`/`max_`/`pow`/`clamp` |
 | `parse.hpp` | `Parser<T>` + primitives/sequencing/choice/lexemes (`eof`/`peek`/`not_followed`/`label`/`context`/`many1`/`chainl1`), position-carrying errors, operators (`>>`, `<<`, `\|`, `>>=`, `*`, `%`) |
 | `print.hpp` | `operator<<` for `Result`/`Either`/`Validation` |
-| `random.hpp` | `Rng`: `next_u64`/`randint`/`uniform`/`normal`/`bernoulli`/`shuffle`/`sample_indices`/`categorical`/`weighted_choice` |
+| `random.hpp` | `Rng`: `next_u64`/`next_double`/`below`/`randint`/`uniform`/`normal`/`bernoulli`/`shuffle`/`sample_indices`/`categorical`/`weighted_choice`, plus `Categorical` (precomputed alias table, O(1) weighted draws) |
 | `ranges.hpp` | range-generic `map`/`filter`/`fold_left`/`fold_right`/`scan`/`zip`/`enumerate`/`group_by`/`chunk`/`windows`/`flat_map`/`filter_map`/`take_while`/`drop_while`/`unique`/`sort`/`sort_by`/`partition`/`span` + curried stages for `into(…) \| …` pipelines |
 | `reflect.hpp` | macro-free, RTTI-free dynamic reflection: `arity`/`field_at`/`field_type`/`field_name` + compile-time `has_field`/`field_index`, `fields`/`describe`/`describe_shape`/`type_info` with a lock-free registry, `AnyRef` with `field`/`get_field`/`set_field` and `for_each_field`/`for_each_field_ref`, whole-object `to_string`/`equal`/`copy_fields`, enum names, `FieldAccess` (+ `members<...>`) opt-in |
 | `result.hpp` | `Result<T>` + `ok`/`err`, `sequence`/`traverse`/`transpose`/`try_`/`combine2`/`context`/`collect_all`/`unwrap`, `std::expected` bridge (C++23) |
@@ -191,6 +191,12 @@ chain with no error branches.
   thread-safe.
 - **`bits.hpp`** is `constexpr` throughout; bit-index preconditions are
   `assert`s, and the object-representation helpers use native byte order.
+- **Hot kernels are measured, not assumed.** `linalg` blocks and vectorizes
+  `matmul` (4x over the naive loop), reductions use four accumulators, and the
+  string/random/serialize parsers use `to_chars`/`from_chars` and alias tables
+  instead of streams and linear scans. `EXTENSIONS.md` (Wave 9) has the
+  before/after table, including the two optimizations that were measured and
+  rejected.
 - **`Either` accessors** (`value()`/`error()`) assume the right alternative is
   held; guard with `is_ok()` first, or destructure with `match`.
 

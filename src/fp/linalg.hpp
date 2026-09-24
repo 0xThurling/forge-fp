@@ -19,10 +19,108 @@ namespace fp {
 // with `assert` in debug builds. Domain code validates shapes at its boundary
 // and then calls these functions.
 
+// The kernels below hand the compiler two things it cannot infer: that the
+// output row and the `b` row do not overlap, and that reductions may use
+// several independent accumulators. Without them every hot loop stays scalar.
+#ifndef FP_RESTRICT
+#if defined(_MSC_VER)
+#define FP_RESTRICT __restrict
+#elif defined(__GNUC__) || defined(__clang__)
+#define FP_RESTRICT __restrict__
+#else
+#define FP_RESTRICT
+#endif
+#endif
+
+namespace detail {
+
+// j-tile width for the matmul micro-kernel: one accumulator row, sized so the
+// accumulators stay in vector registers (8 doubles = 2 AVX2 registers).
+inline constexpr std::size_t matmul_tile = 8;
+
+// One output row of `A * B`: for each j-tile, accumulate over all k in
+// registers, then store once. `b_row(p)` yields a pointer to row p of B.
+template <class T, class BRow>
+void matmul_row(T const *FP_RESTRICT a_row, std::size_t k, std::size_t n,
+                T *FP_RESTRICT out_row, BRow &&b_row) {
+  std::size_t j = 0;
+  for (; j + matmul_tile <= n; j += matmul_tile) {
+    T acc[matmul_tile] = {};
+    for (std::size_t p = 0; p < k; ++p) {
+      const T a_ip = a_row[p];
+      const T *FP_RESTRICT b = b_row(p) + j;
+      for (std::size_t t = 0; t < matmul_tile; ++t)
+        acc[t] += a_ip * b[t];
+    }
+    for (std::size_t t = 0; t < matmul_tile; ++t)
+      out_row[j + t] = acc[t];
+  }
+  for (; j < n; ++j) {
+    T acc = T{};
+    for (std::size_t p = 0; p < k; ++p)
+      acc += a_row[p] * b_row(p)[j];
+    out_row[j] = acc;
+  }
+}
+
+// Four output rows per pass over B: B's rows are read once per four rows of A
+// instead of once per row, which is the difference between an L3- and an
+// L2-bound kernel once B no longer fits in L2 (from roughly 256x256 doubles).
+template <class T, class BRow>
+void matmul_4row(T const *FP_RESTRICT const *a_rows, std::size_t k,
+                 std::size_t n, T *FP_RESTRICT const *out_rows, BRow &&b_row) {
+  // 4x4 tile: 16 accumulators fit in vector registers (a 4x8 tile spills), and
+  // B's rows are read once per four output rows.
+  constexpr std::size_t tile = 4;
+  std::size_t j = 0;
+  for (; j + tile <= n; j += tile) {
+    T r0[tile] = {}, r1[tile] = {}, r2[tile] = {}, r3[tile] = {};
+    for (std::size_t p = 0; p < k; ++p) {
+      const T *FP_RESTRICT b = b_row(p) + j;
+      const T a0 = a_rows[0][p];
+      const T a1 = a_rows[1][p];
+      const T a2 = a_rows[2][p];
+      const T a3 = a_rows[3][p];
+      for (std::size_t t = 0; t < tile; ++t) {
+        r0[t] += a0 * b[t];
+        r1[t] += a1 * b[t];
+        r2[t] += a2 * b[t];
+        r3[t] += a3 * b[t];
+      }
+    }
+    for (std::size_t t = 0; t < tile; ++t) {
+      out_rows[0][j + t] = r0[t];
+      out_rows[1][j + t] = r1[t];
+      out_rows[2][j + t] = r2[t];
+      out_rows[3][j + t] = r3[t];
+    }
+  }
+  for (; j < n; ++j) { // ragged tail columns
+    T c0{}, c1{}, c2{}, c3{};
+    for (std::size_t p = 0; p < k; ++p) {
+      const T bp = b_row(p)[j];
+      c0 += a_rows[0][p] * bp;
+      c1 += a_rows[1][p] * bp;
+      c2 += a_rows[2][p] * bp;
+      c3 += a_rows[3][p] * bp;
+    }
+    out_rows[0][j] = c0;
+    out_rows[1][j] = c1;
+    out_rows[2][j] = c2;
+    out_rows[3][j] = c3;
+  }
+}
+
+} // namespace detail
+
+// `transpose` lives in grid.hpp (the canonical home for 2-D shape helpers) and
+// is included here, so `#include <fp/linalg.hpp>` is enough to use it.
+
 // --- products ---------------------------------------------------------------
 
 // (m x k) * (k x n) -> (m x n). Loop order i-k-j keeps both `b`'s row and the
-// output row contiguous.
+// output row contiguous; the j-tile keeps the accumulator in registers, so the
+// output row is written once per k instead of read-modify-written k times.
 template <class T>
 std::vector<std::vector<T>> matmul(std::vector<std::vector<T>> const &a,
                                    std::vector<std::vector<T>> const &b) {
@@ -32,14 +130,18 @@ std::vector<std::vector<T>> matmul(std::vector<std::vector<T>> const &a,
   const std::size_t n = b[0].size();
   assert(k == b.size());
 
-  std::vector<std::vector<T>> out(m, std::vector<T>(n, T{}));
-  for (std::size_t i = 0; i < m; ++i) {
-    for (std::size_t p = 0; p < k; ++p) {
-      const T a_ip = a[i][p];
-      for (std::size_t j = 0; j < n; ++j)
-        out[i][j] += a_ip * b[p][j];
-    }
+  std::vector<std::vector<T>> out(m, std::vector<T>(n));
+  auto b_row = [&b](std::size_t p) { return b[p].data(); };
+  std::size_t i = 0;
+  for (; i + 4 <= m; i += 4) {
+    T const *a_rows[4] = {a[i].data(), a[i + 1].data(), a[i + 2].data(),
+                          a[i + 3].data()};
+    T *out_rows[4] = {out[i].data(), out[i + 1].data(), out[i + 2].data(),
+                      out[i + 3].data()};
+    detail::matmul_4row<T>(a_rows, k, n, out_rows, b_row);
   }
+  for (; i < m; ++i)
+    detail::matmul_row<T>(a[i].data(), k, n, out[i].data(), b_row);
   return out;
 }
 
@@ -52,13 +154,18 @@ std::vector<T> matmul(std::span<T const> a, std::size_t m, std::size_t k,
                       std::span<T const> b, std::size_t n) {
   assert(a.size() >= m * k);
   assert(b.size() >= k * n);
-  std::vector<T> out(m * n, T{});
-  for (std::size_t i = 0; i < m; ++i)
-    for (std::size_t p = 0; p < k; ++p) {
-      const T a_ip = a[i * k + p];
-      for (std::size_t j = 0; j < n; ++j)
-        out[i * n + j] += a_ip * b[p * n + j];
-    }
+  std::vector<T> out(m * n);
+  auto b_row = [b, n](std::size_t p) { return b.data() + p * n; };
+  std::size_t i = 0;
+  for (; i + 4 <= m; i += 4) {
+    T const *a_rows[4] = {a.data() + i * k, a.data() + (i + 1) * k,
+                          a.data() + (i + 2) * k, a.data() + (i + 3) * k};
+    T *out_rows[4] = {out.data() + i * n, out.data() + (i + 1) * n,
+                      out.data() + (i + 2) * n, out.data() + (i + 3) * n};
+    detail::matmul_4row<T>(a_rows, k, n, out_rows, b_row);
+  }
+  for (; i < m; ++i)
+    detail::matmul_row<T>(a.data() + i * k, k, n, out.data() + i * n, b_row);
   return out;
 }
 
@@ -81,11 +188,22 @@ std::vector<T> matvec(std::vector<std::vector<T>> const &a,
                       std::vector<T> const &x) {
   assert(!a.empty());
   assert(a[0].size() == x.size());
+  const std::size_t n = x.size();
   std::vector<T> out(a.size(), T{});
   for (std::size_t i = 0; i < a.size(); ++i) {
-    T acc = T{};
-    for (std::size_t j = 0; j < x.size(); ++j)
-      acc += a[i][j] * x[j];
+    T const *FP_RESTRICT row = a[i].data();
+    T const *FP_RESTRICT px = x.data();
+    T a0{}, a1{}, a2{}, a3{};
+    std::size_t j = 0;
+    for (; j + 4 <= n; j += 4) {
+      a0 += row[j] * px[j];
+      a1 += row[j + 1] * px[j + 1];
+      a2 += row[j + 2] * px[j + 2];
+      a3 += row[j + 3] * px[j + 3];
+    }
+    T acc = (a0 + a1) + (a2 + a3);
+    for (; j < n; ++j)
+      acc += row[j] * px[j];
     out[i] = acc;
   }
   return out;
@@ -95,10 +213,15 @@ std::vector<T> matvec(std::vector<std::vector<T>> const &a,
 template <class T>
 std::vector<std::vector<T>> outer(std::vector<T> const &a,
                                   std::vector<T> const &b) {
-  std::vector<std::vector<T>> out(a.size(), std::vector<T>(b.size(), T{}));
-  for (std::size_t i = 0; i < a.size(); ++i)
-    for (std::size_t j = 0; j < b.size(); ++j)
-      out[i][j] = a[i] * b[j];
+  std::vector<std::vector<T>> out(a.size(), std::vector<T>(b.size()));
+  T const *FP_RESTRICT pb = b.data();
+  const std::size_t n = b.size();
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    T *FP_RESTRICT row = out[i].data();
+    const T ai = a[i];
+    for (std::size_t j = 0; j < n; ++j)
+      row[j] = ai * pb[j];
+  }
   return out;
 }
 
@@ -159,16 +282,23 @@ template <class T>
 template <class T>
 std::vector<T> hadamard(std::vector<T> const &a, std::vector<T> const &b) {
   assert(a.size() == b.size());
-  std::vector<T> out(a.size());
-  for (std::size_t i = 0; i < a.size(); ++i)
-    out[i] = a[i] * b[i];
+  const std::size_t n = a.size();
+  std::vector<T> out(n);
+  T const *FP_RESTRICT pa = a.data();
+  T const *FP_RESTRICT pb = b.data();
+  T *FP_RESTRICT po = out.data();
+  for (std::size_t i = 0; i < n; ++i)
+    po[i] = pa[i] * pb[i];
   return out;
 }
 
 template <class T> std::vector<T> scale(std::vector<T> const &v, T k) {
-  std::vector<T> out(v.size());
-  for (std::size_t i = 0; i < v.size(); ++i)
-    out[i] = v[i] * k;
+  const std::size_t n = v.size();
+  std::vector<T> out(n);
+  T const *FP_RESTRICT pv = v.data();
+  T *FP_RESTRICT po = out.data();
+  for (std::size_t i = 0; i < n; ++i)
+    po[i] = pv[i] * k;
   return out;
 }
 
@@ -186,25 +316,58 @@ add_row_broadcast(std::vector<std::vector<T>> const &g,
 
 // --- reductions -------------------------------------------------------------
 
+// Reductions run with four independent accumulators: a single accumulator is
+// limited by FP-add latency (one element per ~4 cycles), four of them reach
+// one per cycle even before the vectorizer packs them.
 template <class T> T dot(std::span<T const> a, std::span<T const> b) {
   assert(a.size() == b.size());
-  T acc = T{};
-  for (std::size_t i = 0; i < a.size(); ++i)
-    acc += a[i] * b[i];
+  T const *FP_RESTRICT pa = a.data();
+  T const *FP_RESTRICT pb = b.data();
+  const std::size_t n = a.size();
+  T a0{}, a1{}, a2{}, a3{};
+  std::size_t i = 0;
+  for (; i + 4 <= n; i += 4) {
+    a0 += pa[i] * pb[i];
+    a1 += pa[i + 1] * pb[i + 1];
+    a2 += pa[i + 2] * pb[i + 2];
+    a3 += pa[i + 3] * pb[i + 3];
+  }
+  T acc = (a0 + a1) + (a2 + a3);
+  for (; i < n; ++i)
+    acc += pa[i] * pb[i];
   return acc;
 }
 
 template <class T> T norm_l1(std::span<T const> v) {
-  T acc = T{};
-  for (T x : v)
-    acc += x < T{} ? -x : x;
+  const std::size_t n = v.size();
+  T a0{}, a1{}, a2{}, a3{};
+  std::size_t i = 0;
+  for (; i + 4 <= n; i += 4) {
+    const T x0 = v[i], x1 = v[i + 1], x2 = v[i + 2], x3 = v[i + 3];
+    a0 += x0 < T{} ? -x0 : x0;
+    a1 += x1 < T{} ? -x1 : x1;
+    a2 += x2 < T{} ? -x2 : x2;
+    a3 += x3 < T{} ? -x3 : x3;
+  }
+  T acc = (a0 + a1) + (a2 + a3);
+  for (; i < n; ++i)
+    acc += v[i] < T{} ? -v[i] : v[i];
   return acc;
 }
 
 template <class T> T norm_l2(std::span<T const> v) {
-  T acc = T{};
-  for (T x : v)
-    acc += x * x;
+  const std::size_t n = v.size();
+  T a0{}, a1{}, a2{}, a3{};
+  std::size_t i = 0;
+  for (; i + 4 <= n; i += 4) {
+    a0 += v[i] * v[i];
+    a1 += v[i + 1] * v[i + 1];
+    a2 += v[i + 2] * v[i + 2];
+    a3 += v[i + 3] * v[i + 3];
+  }
+  T acc = (a0 + a1) + (a2 + a3);
+  for (; i < n; ++i)
+    acc += v[i] * v[i];
   return std::sqrt(acc);
 }
 
@@ -249,13 +412,31 @@ template <std::ranges::range R>
 
 template <std::ranges::range R> double mean(R const &r) {
   assert(!std::ranges::empty(r));
-  double sum = 0.0;
+  double a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
   std::size_t n = 0;
-  for (auto const &x : r) {
-    sum += static_cast<double>(x);
+  auto it = std::ranges::begin(r);
+  const auto end = std::ranges::end(r);
+  while (it != end) { // four independent chains, ragged end handled by breaks
+    a0 += static_cast<double>(*it);
+    ++it;
+    ++n;
+    if (it == end)
+      break;
+    a1 += static_cast<double>(*it);
+    ++it;
+    ++n;
+    if (it == end)
+      break;
+    a2 += static_cast<double>(*it);
+    ++it;
+    ++n;
+    if (it == end)
+      break;
+    a3 += static_cast<double>(*it);
+    ++it;
     ++n;
   }
-  return sum / static_cast<double>(n);
+  return ((a0 + a1) + (a2 + a3)) / static_cast<double>(n);
 }
 
 // ddof = 0: population variance; ddof = 1: sample variance.
@@ -264,12 +445,30 @@ double variance(R const &r, std::size_t ddof = 0) {
   const std::size_t n = std::ranges::size(r);
   assert(n > ddof);
   const double m = mean(r);
-  double acc = 0.0;
-  for (auto const &x : r) {
-    const double d = static_cast<double>(x) - m;
-    acc += d * d;
+  double a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
+  auto it = std::ranges::begin(r);
+  const auto end = std::ranges::end(r);
+  while (it != end) { // four independent chains (a switch per element is slower)
+    double d = static_cast<double>(*it) - m;
+    a0 += d * d;
+    ++it;
+    if (it == end)
+      break;
+    d = static_cast<double>(*it) - m;
+    a1 += d * d;
+    ++it;
+    if (it == end)
+      break;
+    d = static_cast<double>(*it) - m;
+    a2 += d * d;
+    ++it;
+    if (it == end)
+      break;
+    d = static_cast<double>(*it) - m;
+    a3 += d * d;
+    ++it;
   }
-  return acc / static_cast<double>(n - ddof);
+  return ((a0 + a1) + (a2 + a3)) / static_cast<double>(n - ddof);
 }
 
 // --- grid reductions --------------------------------------------------------
@@ -279,9 +478,19 @@ std::vector<T> row_sums(std::vector<std::vector<T>> const &g) {
   std::vector<T> out;
   out.reserve(g.size());
   for (auto const &row : g) {
-    T acc = T{};
-    for (T x : row)
-      acc += x;
+    T const *FP_RESTRICT p = row.data();
+    const std::size_t n = row.size();
+    T a0{}, a1{}, a2{}, a3{};
+    std::size_t i = 0;
+    for (; i + 4 <= n; i += 4) {
+      a0 += p[i];
+      a1 += p[i + 1];
+      a2 += p[i + 2];
+      a3 += p[i + 3];
+    }
+    T acc = (a0 + a1) + (a2 + a3);
+    for (; i < n; ++i)
+      acc += p[i];
     out.push_back(acc);
   }
   return out;
@@ -291,10 +500,14 @@ template <class T>
 std::vector<T> col_sums(std::vector<std::vector<T>> const &g) {
   if (g.empty())
     return {};
-  std::vector<T> out(g[0].size(), T{});
-  for (auto const &row : g)
-    for (std::size_t j = 0; j < row.size(); ++j)
-      out[j] += row[j];
+  const std::size_t n = g[0].size();
+  std::vector<T> out(n, T{});
+  T *FP_RESTRICT po = out.data();
+  for (auto const &row : g) {
+    T const *FP_RESTRICT p = row.data();
+    for (std::size_t j = 0; j < n; ++j)
+      po[j] += p[j];
+  }
   return out;
 }
 
@@ -303,10 +516,20 @@ std::vector<T> row_means(std::vector<std::vector<T>> const &g) {
   std::vector<T> out;
   out.reserve(g.size());
   for (auto const &row : g) {
-    T acc = T{};
-    for (T x : row)
-      acc += x;
-    out.push_back(row.empty() ? T{} : acc / static_cast<T>(row.size()));
+    T const *FP_RESTRICT p = row.data();
+    const std::size_t n = row.size();
+    T a0{}, a1{}, a2{}, a3{};
+    std::size_t i = 0;
+    for (; i + 4 <= n; i += 4) {
+      a0 += p[i];
+      a1 += p[i + 1];
+      a2 += p[i + 2];
+      a3 += p[i + 3];
+    }
+    T acc = (a0 + a1) + (a2 + a3);
+    for (; i < n; ++i)
+      acc += p[i];
+    out.push_back(n == 0 ? T{} : acc / static_cast<T>(n));
   }
   return out;
 }

@@ -158,3 +158,18 @@ TEST(Ranges, CurriedFilterMapFlatMapPartitionSpan) {
   EXPECT_EQ(fp::to_vector(lo), (std::vector<int>{1, 2}));
   EXPECT_EQ(fp::to_vector(hi), (std::vector<int>{3, 4}));
 }
+
+TEST(Ranges, WindowsWrapAroundTheRing) {
+  const std::vector<int> v{1, 2, 3, 4, 5};
+  const auto w = fp::windows(v, 3);
+  ASSERT_EQ(w.size(), 3u);
+  EXPECT_EQ(w[0], (std::vector<int>{1, 2, 3}));
+  EXPECT_EQ(w[1], (std::vector<int>{2, 3, 4}));
+  EXPECT_EQ(w[2], (std::vector<int>{3, 4, 5})); // the ring wrapped before this one
+
+  EXPECT_TRUE(fp::windows(v, 0).empty());
+  ASSERT_EQ(fp::windows(v, 5).size(), 1u);
+  EXPECT_EQ(fp::windows(v, 5)[0], v);
+  EXPECT_TRUE(fp::windows(v, 6).empty());
+  EXPECT_TRUE(fp::windows(std::vector<int>{}, 2).empty());
+}

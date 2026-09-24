@@ -110,3 +110,18 @@ TEST(Input, FeedLinesIntoChannel) {
   ch.close();
   EXPECT_FALSE(ch.try_recv().has_value());
 }
+
+TEST(Io, StringViewPaths) {
+  const std::string path = temp_path("io_string_view.txt");
+  const std::string_view view = path; // a view, not a std::string
+  ASSERT_TRUE(fp::write_file(view, "payload").is_ok());
+  auto back = fp::read_file(view);
+  ASSERT_TRUE(back.is_ok());
+  EXPECT_EQ(back.value(), "payload");
+  EXPECT_TRUE(fp::exists(view));
+
+  // a substring of a longer buffer works too (no temporary std::string)
+  const std::string longer = path + "_suffix_that_is_not_part_of_the_name";
+  const std::string_view prefix = std::string_view(longer).substr(0, path.size());
+  EXPECT_TRUE(fp::exists(prefix));
+}

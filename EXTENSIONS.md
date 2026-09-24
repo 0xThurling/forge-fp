@@ -519,7 +519,9 @@ template <class T> std::vector<std::size_t> argmin_rows(std::vector<std::vector<
 - `variance` takes `ddof` (`0` population, `1` sample).
 - Shape preconditions are documented and asserted in debug; domain code
   validates shapes at its own boundary and then calls fp.
-- `transpose` stays in `fp::grid`; `linalg` re-exports it for discoverability.
+- `transpose` is defined in `fp::grid` (its canonical home); `linalg.hpp`
+  includes `grid.hpp`, so `#include <fp/linalg.hpp>` is enough to use it.
+  `test/api_linalg_test.cpp` pins that.
 
 ### `fp/simd.hpp` extensions
 
@@ -745,6 +747,96 @@ changes.
 
 ---
 
+## Wave 9 — measured performance pass
+
+A second, performance-only audit: every change below has a before/after
+benchmark in `bench/`, and two audit hypotheses were **rejected by
+measurement** and reverted.
+
+### Big wins
+
+| Change | Before | After | Speedup |
+|---|---|---|---|
+| `linalg::matmul` — 4x4 register tile + `__restrict__` row pointers (the old loop was scalar and L3-bound) | 6.65ms (256²) / 53.8ms (512²) | 1.63ms / 13.6ms | **4.1x / 4.0x** |
+| `linalg::matvec` — four accumulators per row | 38.1us | 8.5us | **4.5x** |
+| `linalg::row_sums` — four accumulators per row | 725us | 181us | **4.0x** |
+| `linalg::norm_l2` / `mean` / `variance` — multi-accumulator | 774/774/1540us | 202/223/499us | **3.8x / 3.5x / 3.1x** |
+| `linalg::dot` | 815us | 396us | **2.1x** |
+| `str::split(s, char)` — `find` loop instead of `stringstream`+`getline` | 6.27ms (100k fields) | 0.89ms | **7.0x** |
+| `str::to_int` / `to_double` — `from_chars`, no exception on bad input | 30ns / 1.10us (invalid) | 7ns / 11ns | **4.2x / 99x** |
+| `str::to_lower`/`to_upper` — ASCII range check instead of per-char `tolower` | 1.44ms (600KB) | 0.30ms | **4.8x** |
+| `str::to_string(double, p)` — `to_chars` | 263ns | 65ns | **4.0x** |
+| `str::join` (range) — direct append + `to_chars`, no ostringstream | 26.6us (1k ints) | 9.4us | **2.8x** |
+| `serialize::from_text` — `from_chars` scan, no stream copy | 1.74ms (10k doubles) | 0.20ms | **8.7x** |
+| `serialize::to_text` — `to_chars` | 2.49ms | 0.64ms | **3.9x** |
+| `Rng::normal` — the distribution is state, so the cached Box-Muller sample survives | 32.6ns | 17.2ns | **1.9x** |
+| `Rng::uniform` / `bernoulli` — built from one engine word | 6.5/6.8ns | 2.2/2.5ns | **2.9x / 2.7x** |
+| `fp::Categorical` — alias table (Vose) instead of re-summing the weights per draw | 11.5us (k=10k) | 8.4ns | **~1370x** |
+| `io::read_bytes` — bulk seek+read instead of `istreambuf_iterator` | ~30ms (8MB) | 1.25ms | **~24x** |
+| `simd::par_map_inplace` — maps each slice in place (removed two full-buffer copies) | — | — | traffic halved |
+| `ThreadPool`-based `par_*` — dynamic chunks, caller participates, latch instead of a future per chunk | `par_map` 533us, `par_reduce` 153us | 457us, 126us | **1.17x / 1.22x** |
+
+### Rejected by measurement (reverted)
+
+| Hypothesis | Result |
+|---|---|
+| `RingBuffer`: pad `head_`/`tail_` onto separate cache lines to kill false sharing | **No difference** (14.2 vs 14.3 ns/msg SPSC, `spsc_probe`). The two indices have to cross between cores on every operation anyway, so there is no false sharing to remove. Padding reverted; a lazy (batched) head read was measured **2x slower** as well. |
+| `Actor`: drain the mailbox with `try_recv` before blocking again | **~7% slower** for a consumer that keeps up — the extra lock per message costs more than the avoided condvar wait. Reverted. |
+| `grid::transpose`: 32x32 blocked transpose | Only **1.13x** at 1024² (the grid is L3-resident; blocking pays off beyond L3). Kept, because it is never slower and scales up. |
+
+### Correctness fix found while measuring
+
+- **`Task::then`/`and_then` only checked the stop token before waiting for the
+  upstream stage**, so cancelling a chain while the upstream was still running
+  let the continuation execute anyway — contradicting the documented "skipped
+  if the chain was stopped". The check now also runs after `fut.get()`, which
+  also made the `Cancellation.ThenSkippedWhenCancelled` test deterministic
+  (it was racing a 50ms sleep against the test thread and failed ~7/10 under
+  TSan). TSan is green again: 389/389, zero data-race warnings.
+
+### Also in this wave
+
+- `str::split`/`lines`/`join`/`chunk`/`split_any` reserve up front; `replace_all`
+  is one pass instead of `std::string::replace` per hit; `str::chunk` reserves.
+- `serialize` dropped `<sstream>`/`<iomanip>`; `string.hpp` dropped `<iomanip>`.
+- `simd::map_inplace` accepts a `std::span` (any contiguous slice, `Buffer`,
+  arrays) and the vector overload delegates to it; `simd::gather` checks its
+  index precondition with `assert` instead of a throwing `.at()`.
+- `map_values` reserves; `memoize` constructs the value in place instead of
+  copying it twice; `grid::windows2d` reserves the (known) patch count.
+- New benches: `string`, `random`, `serialize`, `ranges`, `io` (plus extra rows
+  in `linalg`, `simd`, `concurrent`), all wired into `scripts/run_bench.sh`.
+
+### Plan-drift follow-ups (landed)
+
+- `linalg.hpp` now documents that `transpose` comes with it; `bench/` gained the
+  missing `par_for` row (acceptance criterion #1: 1.59ms sequential vs 0.46ms on
+  8 threads); the stale "GPU ... beyond `par_for`" out-of-scope line now points
+  at `GPU.md`, which owns that tier.
+- Coverage for the Wave 9 additions: `test/api_linalg_test.cpp` (new: every
+  linalg entry point with only `linalg.hpp` included, including the transpose
+  re-export), plus new cases for `par_for`/`submit`/exception propagation through
+  the `par_*` helpers, `map_inplace(span)` and `par_map_inplace`, the `windows`
+  ring wrap-around, `split(char)` vs `split(string)` parity, strict
+  `to_int`/`to_double` (trailing garbage, leading `+`, out of range), non-ASCII
+  case mapping, `from_text` edges, multi-accumulator reduction accuracy against
+  naive sums, `string_view` paths, and `memoize` with a non-trivial value type.
+  Test suite: 405 tests, 0 warnings on GCC and Clang.
+
+### Still open (measured, deliberately deferred)
+
+- **`numerics` softmax/logsumexp are `std::exp`-bound** (~5.8ns/element): a
+  vectorized exp lives in the opt-in `simd.hpp` (`map_exp`, ~3x); the docs now
+  point there. Making `numerics` depend on `<experimental/simd>` would break its
+  "plain C++20" contract.
+- **`Parser<T>` erasure** (~3.4x a hand-written loop): fixed in Wave 8 by
+  `scan_while`; de-erasing the parser remains an API-breaking change.
+- **`Task`/`Async` continuations still use `std::async`** (a thread per step).
+  A pool-backed version needs either a global pool (lifetime hazards) or a pool
+  parameter (API change), so it is documented rather than changed.
+
+---
+
 ## Compatibility rules
 
 - Header-only, `namespace fp`, C++20, zero external dependencies.
@@ -762,7 +854,9 @@ changes.
 1. `bench/` shows fp primitives within noise of hand-written loops for:
    `for_each`, `transform_inplace`, `sort_by_inplace`, `matmul`, `softmax`,
    `par_for`, and `Buffer`/`with_buffer` vs `std::vector` / raw `new[]` +
-   `delete[]`.
+   `delete[]`. All of these have a row now: `matmul` is 4x *faster* than the
+   naive loop (Wave 9), `par_for` is 3.5x faster than the sequential index loop
+   on 8 threads, the rest are within noise.
 2. `ml` docs rewritten so every file has a "ForgeFP usage" section and no
    hand-rolled loop where an fp primitive exists.
 3. `forge-gl` re-audited: every loop it still owns is either an SDL call or a
@@ -790,6 +884,7 @@ changes.
 - Owning `Matrix`/`Tensor` types in fp (domain containers stay in `ml/core/`).
 - Object pools (`Arena::mark`/`reset_to` covers nested scopes; a pool is a
   different lifetime model).
-- GPU, distributed, or blocked/parallel linear algebra beyond `par_for`.
+- Distributed linear algebra. GPU work is not out of scope: it has its own
+  plan in [`GPU.md`](GPU.md), whose phases 0-3 are landed (phase 4 is next).
 - Reverse-mode autodiff.
 - Calendar/time-zone code (`fp::time` is monotonic timing only).

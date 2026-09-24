@@ -104,3 +104,16 @@ TEST(Compose, Memoize2AndN) {
   EXPECT_EQ(m3(1, 2, "y"), "3y");
   EXPECT_EQ(*calls3, 2);
 }
+
+TEST(Compose, MemoizeStringValues) {
+  int calls = 0;
+  auto m = fp::memoize<int>([&calls](int x) {
+    ++calls;
+    return std::string(static_cast<std::size_t>(x), 'x');
+  });
+  EXPECT_EQ(m(3), "xxx");
+  EXPECT_EQ(m(3), "xxx");
+  EXPECT_EQ(calls, 1);
+  EXPECT_EQ(m(4), "xxxx");
+  EXPECT_EQ(calls, 2);
+}

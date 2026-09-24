@@ -50,14 +50,20 @@ TEST(Cancellation, AsyncTaskThen) {
 
 TEST(Cancellation, ThenSkippedWhenCancelled) {
   auto ran = std::make_shared<std::atomic<bool>>(false);
-  auto t = fp::async_task([] {
-             std::this_thread::sleep_for(50ms);
+  // Gate the body so the cancel is guaranteed to happen while it is still
+  // running. (A plain 50ms sleep made the test racy under TSan, where the
+  // test thread can be slowed enough for the sleep to win.)
+  auto gate = std::make_shared<std::atomic<bool>>(false);
+  auto t = fp::async_task([gate] {
+             while (!gate->load())
+               std::this_thread::yield();
              return 1;
            }).then([ran](int x) {
              ran->store(true);
              return x;
            });
   t.cancel();
+  gate->store(true); // let the body finish; the continuation must stay skipped
   auto r = t.get();
   ASSERT_FALSE(r.is_ok());
   EXPECT_EQ(r.error(), "cancelled");

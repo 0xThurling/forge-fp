@@ -32,3 +32,15 @@ TEST(Serialize, BytesRoundTrip) {
   auto truncated = std::vector<std::byte>(bytes.begin(), bytes.end() - 1);
   EXPECT_FALSE(fp::from_bytes<float>(truncated).is_ok());
 }
+
+TEST(Serialize, FromTextEdges) {
+  EXPECT_TRUE(fp::from_text<double>("").value().empty());
+  EXPECT_TRUE(fp::from_text<double>("  \t\n ").value().empty());
+  EXPECT_EQ(fp::from_text<int>("+1 -2").value(), (std::vector<int>{1, -2}));
+  EXPECT_FALSE(fp::from_text<int>("1 2x").is_ok());
+  EXPECT_FALSE(fp::from_text<int>("99999999999999999999").is_ok());
+  EXPECT_DOUBLE_EQ(fp::from_text<double>("1.5e3").value()[0], 1500.0);
+
+  // Character ranges keep character semantics (ostream-compatible).
+  EXPECT_EQ(fp::to_text(std::vector<char>{'a', 'b'}), "a b");
+}

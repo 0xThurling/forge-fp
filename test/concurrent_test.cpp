@@ -171,3 +171,55 @@ TEST(Concurrent, ParForIndexAndMapTo) {
   fp::par_for(pool, 5, 5, [](std::size_t) { FAIL(); });
   fp::par_map_to(pool, std::vector<int>{}, out, [](int x) { return x; });
 }
+
+TEST(Concurrent, ParForCoversEveryIndexOnce) {
+  fp::ThreadPool pool(4);
+  std::vector<int> v(10'000, -1);
+  fp::par_for(pool, 0, v.size(),
+              [&](std::size_t i) { v[i] = static_cast<int>(i); });
+  for (std::size_t i = 0; i < v.size(); ++i)
+    ASSERT_EQ(v[i], static_cast<int>(i));
+
+  // empty and single-element ranges are no-ops / one call
+  fp::par_for(pool, 7, 7, [](std::size_t) { FAIL() << "empty range ran"; });
+  int calls = 0;
+  fp::par_for(pool, 3, 4, [&](std::size_t i) {
+    ++calls;
+    EXPECT_EQ(i, 3u);
+  });
+  EXPECT_EQ(calls, 1);
+}
+
+TEST(Concurrent, SubmitRunsFireAndForgetTasks) {
+  fp::ThreadPool pool(4);
+  std::atomic<int> ran{0};
+  for (int i = 0; i < 64; ++i)
+    pool.submit([&ran] { ran.fetch_add(1, std::memory_order_relaxed); });
+  for (int spin = 0; spin < 100'000 && ran.load() < 64; ++spin)
+    std::this_thread::yield();
+  EXPECT_EQ(ran.load(), 64);
+}
+
+TEST(Concurrent, ParHelpersPropagateChunkExceptions) {
+  fp::ThreadPool pool(4);
+  std::vector<int> v(1000, 1);
+  const auto boom = [] { throw std::runtime_error("chunk failed"); };
+  EXPECT_THROW(fp::par_for_each(pool, v, [&](int) { boom(); }),
+               std::runtime_error);
+  EXPECT_THROW((void)fp::par_map(pool, v, [&](int) -> int {
+                 boom();
+                 return 0;
+               }),
+               std::runtime_error);
+  EXPECT_THROW(
+      (void)fp::par_reduce(pool, v, 0,
+                           [&](int a, int b) -> int {
+                             boom();
+                             return a + b;
+                           }),
+      std::runtime_error);
+  // the pool is still usable after a failed batch
+  auto ok = fp::par_map(pool, v, [](int x) { return x + 1; });
+  ASSERT_EQ(ok.size(), v.size());
+  EXPECT_EQ(ok[0], 2);
+}

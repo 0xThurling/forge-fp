@@ -57,6 +57,14 @@ int  c = fp::par_reduce(pool, v, 0, [](int x, int y) { return x + y; });
 `par_reduce` requires an associative `op` (the reduction is reordered across
 workers). `par_map`/`par_for_each` preserve element order in the result.
 
+The pool-based helpers pull work in fine chunks from an atomic counter, and the
+**calling thread is one of the workers**. A worker that is slow to wake costs
+nothing when the caller or another worker already took that chunk, and skewed
+work balances without tuning. They also avoid a future per chunk (a latch
+instead), which cut `par_reduce` by ~20% and `par_map` by ~15% on 1M elements.
+For the same reason, prefer the pool overloads in a loop: the standalone ones
+still create their workers per call (documented, ~tens of microseconds).
+
 Three more pool-based primitives cover the shapes those three don't:
 
 ```cpp
@@ -102,6 +110,11 @@ ch.close();                     // wake waiters; recv throws after drain
 `Channel` is the multi-thread control path (mutex + condvar). Use it for
 general message passing between any number of threads. For a realtime
 producer/consumer that must not block on a mutex, use `RingBuffer` instead.
+
+`RingBuffer` costs ~14ns per message two-threaded (1.5ns single-threaded): the
+two index words have to cross between the cores on every operation, which is
+the price of the design. Padding the indices onto separate cache lines was
+measured and made no difference, so they stay adjacent.
 
 ## `RingBuffer<T>` — lock-free SPSC
 
@@ -173,6 +186,10 @@ Unlike `std::future`, `Async` is copyable (shared state), so one result can fan
 out to many continuations.
 
 ## Cancellation — `Task<T>` and `std::stop_token`
+
+A cancel is observed both when a continuation starts **and after the upstream
+stage finishes**: cancelling a chain while an upstream task is still running
+skips the continuation instead of running it on a stopped chain.
 
 `Task<T>` is a cancellable `AsyncResult<T>`: a `shared_future<Result<T>>` plus
 a shared `std::stop_source`. Cancellation is **cooperative** — `cancel()`

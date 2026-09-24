@@ -30,7 +30,7 @@ everything except the opt-ins: `simd.hpp`, `gpu.hpp`, `autodiff.hpp` and
 | [Scopes](scope.md) | `scope.hpp` | `defer`, `scope_exit`, `scope_success`, `scope_fail` — RAII as a value |
 | [Numerics](numerics.md) | `numerics.hpp` | `softmax`/`log_softmax`/`logsumexp`/`sigmoid`, `linspace`/`arange`, `approx_equal`, `central_difference` |
 | [Linear algebra](linalg.md) | `linalg.hpp` | `matmul`/`matvec`/`solve`, norms, `argmax`, `mean`/`variance`, row/column reductions |
-| [Random](random.md) | `random.hpp` | seedable `Rng`, sampling, shuffling, weighted choice |
+| [Random](random.md) | `random.hpp` | seedable `Rng`, sampling, shuffling, weighted choice, `Categorical` alias table for O(1) repeated draws |
 | [Time](time.md) | `time.hpp` | `now_seconds`, `elapsed_seconds`, `Stopwatch` |
 | [Serialization](serialization.md) | `serialize.hpp` | generic text/binary round-trip for numeric ranges |
 | [Reflection](reflection.md) | `reflect.hpp` | macro-free dynamic reflection: field access, metadata, `describe_shape`, lock-free registry, `to_string`/`equal`/`copy_fields`, enum names, `FieldAccess` opt-in, compile-time cost guidance |

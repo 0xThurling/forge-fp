@@ -184,6 +184,18 @@ fp::maximum(v);   // optional{4}
 fp::minimum(v);   // optional{1}
 ```
 
+`fp::flat_map` calls your function per element and concatenates the results: if
+the function returns a fresh `vector` (or string), the cost is one allocation
+per element (~19ms for 1M elements), not the concatenation. The lazy
+`fp::views::flat_map` has the same requirement on `f` but avoids materializing
+the outer vector; for a hot path, make `f` return a small view or write the loop
+by hand.
+
+`fp::windows` is eager and allocates one `vector<T>` per window: 1M windows of
+16 ints costs ~90ms, almost all of it allocation. For a hot path use the lazy
+`fp::views::slide(n)` (or `views::chunk`), which yields subranges without
+allocating — the eager `windows` is for when you need owned windows to store.
+
 `sort_by` calls the key on every comparison — the standard behaviour and
 allocation-free, best for cheap keys (integers, enums, short strings).
 `sort_by_cached` computes each key once into a scratch buffer first

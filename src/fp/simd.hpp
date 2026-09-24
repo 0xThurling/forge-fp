@@ -17,20 +17,19 @@
 namespace fp {
 template <class T> using vec = std::experimental::native_simd<T>;
 
-template <class T, class F> void map_inplace(std::vector<T> &data, F f) {
+// Works on any contiguous run of T (vector, Buffer, span, array slice).
+template <class T, class F> void map_inplace(std::span<T> data, F f) {
   using V = vec<T>;
   constexpr std::size_t width = V::size();
-  std::size_t n = data.size();
+  const std::size_t n = data.size();
   T *p = data.data();
   std::size_t i = 0;
-
   for (; i + width <= n; i += width) {
     V chunk;
     chunk.copy_from(p + i, std::experimental::element_aligned);
     chunk = f(chunk);
     chunk.copy_to(p + i, std::experimental::element_aligned);
   }
-
   // Tail elements — broadcast the scalar into a vector so f (a SIMD lambda)
   // can be applied generically, then write back lane 0.
   for (; i < n; ++i) {
@@ -40,18 +39,8 @@ template <class T, class F> void map_inplace(std::vector<T> &data, F f) {
   }
 }
 
-template <class T, class F> void map_inplace(std::span<T> &data, F f) {
-  using Vec = fp::vec<T>;
-  constexpr size_t lanes = Vec::size();
-  size_t i = 0;
-  for (; i + lanes <= data.size(); i += lanes) {
-    Vec x;
-    x.copy_from(data.data() + i, std::experimental::element_aligned);
-    auto y = f(x);
-    y.copy_to(data.data() + i, std::experimental::element_aligned);
-  }
-  for (; i < data.size(); ++i)
-    data[i] = f(Vec(data[i]))[0];
+template <class T, class F> void map_inplace(std::vector<T> &data, F f) {
+  map_inplace(std::span<T>(data), std::move(f));
 }
 
 template <class T> T reduce(std::vector<T> const &v, T init = T{}) {
@@ -202,23 +191,17 @@ template <class T> void normalize(std::vector<T> &v) {
 
 template <class T, class F>
 void par_map_inplace(ThreadPool &pool, std::vector<T> &v, F f) {
-  size_t threads = std::min(pool.size(), v.size());
-  if (threads <= 1) {
-    map_inplace(v, f);
+  const std::size_t n = v.size();
+  if (n == 0)
     return;
-  }
-  size_t chunk = (v.size() + threads - 1) / threads;
-  std::vector<std::future<void>> futs;
-  for (size_t s = 0; s < v.size(); s += chunk) {
-    size_t e = std::min(v.size(), s + chunk);
-    futs.push_back(pool.enqueue([&v, &f, s, e] {
-      std::vector<T> part(v.begin() + s, v.begin() + e);
-      map_inplace(part, f);
-      std::copy(part.begin(), part.end(), v.begin() + s);
-    }));
-  }
-  for (auto &fut : futs)
-    fut.get();
+  const std::size_t chunks = detail::chunk_count(n, pool.size());
+  const std::size_t chunk = (n + chunks - 1) / chunks;
+  // Each chunk maps its own slice of the same buffer: no copy out and back.
+  detail::par_run(pool, chunks, [&v, &f, chunk, n](std::size_t c) {
+    const std::size_t s = c * chunk;
+    const std::size_t e = std::min(n, s + chunk);
+    map_inplace(std::span<T>(v.data() + s, e - s), f);
+  });
 }
 
 template <class T>
@@ -236,8 +219,10 @@ template <class T>
 std::vector<T> gather(std::vector<T> const &v, std::vector<size_t> const &idx) {
   std::vector<T> out;
   out.reserve(idx.size());
-  for (size_t i : idx)
-    out.push_back(v.at(i));
+  for (size_t i : idx) {
+    assert(i < v.size()); // precondition: every index is in range
+    out.push_back(v[i]);
+  }
   return out;
 }
 } // namespace fp

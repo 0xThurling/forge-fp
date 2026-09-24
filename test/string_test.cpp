@@ -95,3 +95,30 @@ TEST(String, ParseNumberList) {
   EXPECT_FALSE(bad.is_ok());
   EXPECT_NE(bad.error().find('x'), std::string::npos);
 }
+
+TEST(String, SplitCharMatchesStringDelimiter) {
+  const std::string inputs[] = {"", "a", "a,", ",a", "a,,b", ",", "a,b,c", ","};
+  for (std::string const &s : inputs) {
+    EXPECT_EQ(split(s, ','), split(s, std::string(","))) << "input: '" << s << "'";
+  }
+}
+
+TEST(String, ParseStrictness) {
+  EXPECT_FALSE(to_int("42x").is_ok());   // no trailing garbage
+  EXPECT_FALSE(to_int("4 2").is_ok());
+  EXPECT_FALSE(to_int("0x10").is_ok());
+  EXPECT_EQ(to_int("+7").value(), 7);    // from_chars needs the plus handled
+  EXPECT_EQ(to_int("  -0  ").value(), 0);
+  EXPECT_FALSE(to_double("1.5x").is_ok());
+  EXPECT_DOUBLE_EQ(to_double("+2.5").value(), 2.5);
+  EXPECT_DOUBLE_EQ(to_double("1e3").value(), 1000.0);
+  EXPECT_FALSE(to_int("99999999999999999999").is_ok()); // out of range
+}
+
+TEST(String, CaseMappingLeavesNonAsciiAlone) {
+  std::string s = "aA";
+  s += static_cast<char>(0xC3);
+  s += static_cast<char>(0xA9); // "é" in UTF-8
+  EXPECT_EQ(to_upper(s), std::string("AA") + "\xC3\xA9");
+  EXPECT_EQ(to_lower(s), std::string("aa") + "\xC3\xA9");
+}

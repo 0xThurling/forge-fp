@@ -222,6 +222,14 @@ EXPECT_NEAR(numeric, analytic_grad_w0, 1e-6);
 For forward-mode automatic differentiation (exact derivatives, no `h`), see
 [autodiff](autodiff.md).
 
+## Performance
+
+`softmax`, `softmax_rows`, `log_softmax` and `logsumexp` are dominated by
+`std::exp` (~5.8ns per element; a 1M-element softmax takes ~5.8ms). The loops
+around it are already at memory bandwidth. If softmax is your hot path, use the
+opt-in SIMD tier: `fp::simd::map_exp` vectorizes `exp` (measured ~3x faster than
+scalar `std::exp`) and pairs with the same two-pass structure.
+
 ## Gotchas
 
 - **`softmax` of all `-inf`** returns zeros (the sum is 0); it does not produce

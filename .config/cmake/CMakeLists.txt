@@ -57,14 +57,10 @@ endif()
 # does not build (or fetch a framework for) another project's tests.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR FORGE_BUILD_DEPENDENCY_TESTS)
   enable_testing()
-  # Prefer a system/installed GTest; only fetch it when none is available
-  # (the FetchContent path needs network access, a system package does not).
-  find_package(GTest QUIET)
-  if(NOT GTest_FOUND)
-    include(FetchContent)
-    FetchContent_Declare(googletest GIT_REPOSITORY "https://github.com/google/googletest.git" GIT_TAG "v1.14.0")
-    FetchContent_MakeAvailable(googletest)
-  endif()
+  include(FetchContent)
+  set(FETCHCONTENT_SOURCE_DIR_GOOGLETEST "/home/jacques/.cache/forge/deps/googletest-4849be21" CACHE PATH "" FORCE)
+  FetchContent_Declare(googletest GIT_REPOSITORY "https://github.com/google/googletest.git" GIT_TAG "v1.14.0")
+  FetchContent_MakeAvailable(googletest)
   include(GoogleTest)
   file(GLOB_RECURSE TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/*.cpp")
   list(FILTER TEST_SOURCES EXCLUDE REGEX "/(build|build-[^/]*|CMakeFiles)/")

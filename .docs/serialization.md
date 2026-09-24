@@ -36,6 +36,10 @@ fp::Result<std::vector<T>> from_bytes(std::span<std::byte const> data);
 | `to_bytes` | raw little-endian bytes (host order) | checkpoints, caches, IPC |
 | `from_bytes` | exact inverse | loading them back |
 
+Text formatting uses `std::to_chars`/`from_chars`: `to_text` is ~4x faster and
+`from_text` ~9x faster than the previous stream-based versions, and neither
+depends on the locale or copies the input.
+
 ## Worked examples
 
 ### 1. Text round-trip

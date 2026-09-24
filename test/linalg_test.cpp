@@ -99,3 +99,28 @@ TEST(Linalg, GridReductions) {
   EXPECT_EQ(fp::argmax_rows(h), (std::vector<std::size_t>{1, 0}));
   EXPECT_EQ(fp::argmin_rows(h), (std::vector<std::size_t>{0, 1}));
 }
+
+TEST(Linalg, MultiAccumulatorReductionsMatchNaiveSums) {
+  std::vector<double> v(10'000);
+  for (std::size_t i = 0; i < v.size(); ++i)
+    v[i] = 0.001 * static_cast<double>(i % 977) - 0.4;
+
+  double naive = 0.0;
+  for (double x : v)
+    naive += x;
+  EXPECT_NEAR(fp::mean(v) * static_cast<double>(v.size()), naive, 1e-9);
+
+  double sq = 0.0;
+  for (double x : v)
+    sq += x * x;
+  EXPECT_NEAR(fp::dot<double>(v, v), sq, 1e-9);
+  EXPECT_NEAR(fp::norm_l2<double>(v), std::sqrt(sq), 1e-9);
+
+  // matvec against the hand loop, with a ragged (non-multiple-of-4) width
+  std::vector<std::vector<double>> a(7, std::vector<double>(13, 0.5));
+  std::vector<double> x(13, 2.0);
+  auto got = fp::matvec(a, x);
+  ASSERT_EQ(got.size(), 7u);
+  for (double y : got)
+    EXPECT_DOUBLE_EQ(y, 13.0);
+}

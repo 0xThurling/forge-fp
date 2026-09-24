@@ -219,15 +219,22 @@ template <std::ranges::range R> auto windows(R &&r, size_t n) {
   if (n == 0)
     return out;
   std::vector<T> ring(n);
+  if constexpr (std::ranges::sized_range<R>)
+    out.reserve(std::ranges::size(r) >= n ? std::ranges::size(r) - n + 1 : 0);
   size_t seen = 0;
   for (auto &&x : r) {
     ring[seen % n] = std::forward<decltype(x)>(x);
     ++seen;
     if (seen >= n) {
+      // The oldest element sits at seen % n; two inserts rebuild the window in
+      // order. (A modulo per element made this ~4x slower than it needs to be.)
+      const size_t off = seen % n;
       std::vector<T> window;
       window.reserve(n);
-      for (size_t k = 0; k < n; ++k)
-        window.push_back(ring[(seen - n + k) % n]);
+      window.insert(window.end(), ring.begin() + static_cast<ptrdiff_t>(off),
+                    ring.end());
+      window.insert(window.end(), ring.begin(),
+                    ring.begin() + static_cast<ptrdiff_t>(off));
       out.push_back(std::move(window));
     }
   }

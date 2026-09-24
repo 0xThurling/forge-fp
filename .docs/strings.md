@@ -50,8 +50,13 @@ join(std::vector<int>{1,2,3}, "-");                  // "1-2-3"  (range overload
 ```
 
 `split`/`join` are inverses; both `split` overloads (char and string delimiter)
-and both `join` overloads (vector and range) exist. `join` streams each element
-through `operator<<`, so ranges of numbers and other streamable types work.
+and both `join` overloads (vector and range) exist. `join` appends strings
+directly and formats numbers with `std::to_chars` (a streamable-only type still
+works through an `ostringstream` fallback).
+
+Both are allocation-light: the char `split` uses one `find`/`substr` pass
+(a `stringstream` + `getline` version was ~7x slower), `lines` is `split` on
+`\n`, and `join` reserves the total size first.
 
 When you don't need owned copies, `split_view` returns `vector<string_view>`
 pointing into the original buffer — no allocation per piece:
@@ -173,10 +178,12 @@ auto total = fp::read_file("numbers.txt")
 - **`trim` only trims spaces by default.** For other characters use the
   `char` overloads (`trim_leading(s, c)`), or compose them.
 - **`to_int` accepts a leading `+`/`-` and surrounding whitespace** but rejects
-  anything after the digits (`"42x"` fails). That strictness is deliberate.
+  anything after the digits (`"42x"` fails). That strictness is deliberate, and
+  an invalid field costs ~11ns rather than the ~1.1us an exception used to cost.
 - **`to_string` defaults to 17 digits.** That is right for storage and noisy
   for display; pass a smaller precision for logs.
-- **Locale.** `to_string` uses the stream's locale; for data files, the default
-  "C" locale is what you want.
+- **Locale.** `to_string` and `to_double` are locale-independent (`to_chars`/
+  `from_chars`), so "C" formatting is what you get in every locale. That is what
+  data files want; for user-facing display, format through your own stream.
 - **Strings are byte sequences.** `to_lower`/`to_upper` handle ASCII; Unicode
   case mapping needs a real library.

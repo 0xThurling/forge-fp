@@ -21,6 +21,8 @@ lookup(Map const &m, typename Map::key_type const &k) {
 
 template <class Map, class F> Map map_values(Map const &m, F f) {
   Map out;
+  if constexpr (requires { out.reserve(m.size()); })
+    out.reserve(m.size());
   for (auto const &[k, v] : m)
     out.emplace(k, f(v));
   return out;

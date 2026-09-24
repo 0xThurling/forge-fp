@@ -160,6 +160,19 @@ used by default. On modern CPUs, aligned vs unaligned loads are effectively
 free anyway. If you control the buffer, `fp::Arena` blocks are 64-byte aligned,
 so arena-backed spans are naturally vector-aligned.
 
+## Any contiguous buffer, in place
+
+`map_inplace` takes a `std::span<T>`, so it works on a `Buffer`, a slice of a
+vector, or a raw range — not just a whole `std::vector`. `par_map_inplace`
+splits the buffer across a `ThreadPool` and maps each slice **in place** (no
+copy out and back), with the calling thread pulling chunks too.
+
+```cpp
+fp::Buffer<double> buf(1 << 20);
+fp::map_inplace(buf.span(), [](fp::vec<double> x) { return x * 2.0; });
+fp::par_map_inplace(pool, v, [](fp::vec<double> x) { return x + 1.0; });
+```
+
 ## Gotchas
 
 - **Opt-in.** `simd.hpp` is not in `all.hpp`; include it explicitly.

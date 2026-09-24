@@ -141,6 +141,11 @@ public:
                        if (src->stop_requested())
                          return fp::cancelled<U>();
                        auto r = fut.get();
+                       // Cancelled while the upstream was still running: the
+                       // documented contract is that the continuation is
+                       // skipped, not that it runs on a stopped chain.
+                       if (src->stop_requested())
+                         return fp::cancelled<U>();
                        if (!r.is_ok())
                          return err<U>(r.error());
                        return detail::as_result(f());
@@ -157,6 +162,11 @@ public:
                        if (src->stop_requested())
                          return fp::cancelled<U>();
                        auto r = fut.get();
+                       // Cancelled while the upstream was still running: the
+                       // documented contract is that the continuation is
+                       // skipped, not that it runs on a stopped chain.
+                       if (src->stop_requested())
+                         return fp::cancelled<U>();
                        if (!r.is_ok())
                          return err<U>(r.error());
                        return detail::as_result(f(std::move(r.value())));
@@ -178,6 +188,11 @@ public:
                        if (src->stop_requested())
                          return fp::cancelled<U>();
                        auto r = fut.get();
+                       // Cancelled while the upstream was still running: the
+                       // documented contract is that the continuation is
+                       // skipped, not that it runs on a stopped chain.
+                       if (src->stop_requested())
+                         return fp::cancelled<U>();
                        if (!r.is_ok())
                          return err<U>(r.error());
                        Task<U> next = f();
@@ -197,6 +212,11 @@ public:
                        if (src->stop_requested())
                          return fp::cancelled<U>();
                        auto r = fut.get();
+                       // Cancelled while the upstream was still running: the
+                       // documented contract is that the continuation is
+                       // skipped, not that it runs on a stopped chain.
+                       if (src->stop_requested())
+                         return fp::cancelled<U>();
                        if (!r.is_ok())
                          return err<U>(r.error());
                        Task<U> next = f(std::move(r.value()));

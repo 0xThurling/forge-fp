@@ -99,4 +99,28 @@ TEST(Simd, AxpyInplace) {
     EXPECT_DOUBLE_EQ(v, 2.0);
 }
 
+
+TEST(Simd, MapInplaceSpanSliceAndParallel) {
+  std::vector<double> v(1000);
+  for (std::size_t i = 0; i < v.size(); ++i)
+    v[i] = static_cast<double>(i);
+
+  // The span overload maps a slice, leaving the rest untouched.
+  fp::map_inplace(std::span<double>(v.data() + 100, 50),
+                  [](fp::vec<double> x) { return x * 2.0; });
+  EXPECT_DOUBLE_EQ(v[99], 99.0);
+  EXPECT_DOUBLE_EQ(v[100], 200.0);
+  EXPECT_DOUBLE_EQ(v[149], 298.0);
+  EXPECT_DOUBLE_EQ(v[150], 150.0);
+
+  // par_map_inplace maps the whole buffer in place, matching the scalar result.
+  fp::ThreadPool pool(4);
+  std::vector<double> expected = v;
+  for (double &x : expected)
+    x = x * 2.0 + 1.0;
+  fp::par_map_inplace(pool, v, [](fp::vec<double> x) { return x * 2.0 + 1.0; });
+  ASSERT_EQ(v.size(), expected.size());
+  for (std::size_t i = 0; i < v.size(); ++i)
+    ASSERT_DOUBLE_EQ(v[i], expected[i]);
+}
 #endif // __has_include(<experimental/simd>)

@@ -57,6 +57,20 @@ int main() {
     bench::keep(&scratch[0]);
   });
 
+  // --- par_for: the index-tiling primitive (acceptance criterion) ---
+  bench::measure("sequential index loop (1M)", [&] {
+    std::vector<int> scratch(ids.size());
+    for (std::size_t i = 0; i < ids.size(); ++i)
+      scratch[i] = work(ids[i]);
+    bench::keep(&scratch[0]);
+  });
+  bench::measure("fp::par_for (ThreadPool, 8)", [&] {
+    std::vector<int> scratch(ids.size());
+    fp::par_for(pool, 0, ids.size(),
+                [&](std::size_t i) { scratch[i] = work(ids[i]); });
+    bench::keep(&scratch[0]);
+  });
+
   // --- RingBuffer: raw push/pop cost, and a real two-thread SPSC ---
   constexpr int kRing = 1 << 20;
   bench::measure("RingBuffer push+pop (1M, 1 thread)", [&] {

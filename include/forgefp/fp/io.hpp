@@ -98,14 +98,29 @@ inline bool exists(std::string_view path) {
   if (!in)
     return err<std::vector<std::byte>>("cannot open " + std::string(path));
 
-  const std::string content((std::istreambuf_iterator<char>(in)),
-                            std::istreambuf_iterator<char>());
+  // Same bulk path as read_file: size the buffer and read once. The old
+  // version streamed through istreambuf_iterator into a std::string and then
+  // memcpy'd into the vector (two buffers, one virtual call per byte).
+  std::vector<std::byte> out;
+  if (in.seekg(0, std::ios::end)) {
+    const auto size = in.tellg();
+    if (size > 0) {
+      out.resize(static_cast<std::size_t>(size));
+      in.seekg(0, std::ios::beg);
+      in.read(reinterpret_cast<char *>(out.data()),
+              static_cast<std::streamsize>(out.size()));
+      out.resize(static_cast<std::size_t>(in.gcount()));
+    }
+  } else {
+    in.clear();
+    const std::string content((std::istreambuf_iterator<char>(in)),
+                              std::istreambuf_iterator<char>());
+    out.resize(content.size());
+    if (!content.empty())
+      std::memcpy(out.data(), content.data(), content.size());
+  }
   if (in.bad())
     return err<std::vector<std::byte>>("read failed: " + std::string(path));
-
-  std::vector<std::byte> out(content.size());
-  if (!content.empty())
-    std::memcpy(out.data(), content.data(), content.size());
   return ok(std::move(out));
 }
 

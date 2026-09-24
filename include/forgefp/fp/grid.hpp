@@ -1,6 +1,7 @@
 #pragma once
 
 #include "either.hpp"
+#include <algorithm>
 #include <cstddef>
 #include <type_traits>
 #include <vector>
@@ -23,15 +24,27 @@ auto map2d(std::vector<std::vector<T>> const &g, F f) {
   return out;
 }
 
+// Blocked transpose: one side of the copy is always strided, so the block is
+// what keeps both the source and destination tiles in L1 (a naive transpose of
+// a 1024x1024 grid is cache-miss bound, not copy bound).
 template <class T>
 std::vector<std::vector<T>> transpose(std::vector<std::vector<T>> const &g) {
   if (g.empty())
     return {};
-  size_t rows = g.size(), cols = g[0].size();
+  const size_t rows = g.size(), cols = g[0].size();
   std::vector<std::vector<T>> out(cols, std::vector<T>(rows));
-  for (size_t i = 0; i < rows; ++i)
-    for (size_t j = 0; j < cols; ++j)
-      out[j][i] = g[i][j];
+  constexpr size_t block = 32;
+  for (size_t i0 = 0; i0 < rows; i0 += block) {
+    const size_t i1 = std::min(rows, i0 + block);
+    for (size_t j0 = 0; j0 < cols; j0 += block) {
+      const size_t j1 = std::min(cols, j0 + block);
+      for (size_t i = i0; i < i1; ++i) {
+        const T *src = g[i].data();
+        for (size_t j = j0; j < j1; ++j)
+          out[j][i] = src[j];
+      }
+    }
+  }
   return out;
 }
 
@@ -142,6 +155,7 @@ auto windows2d(std::vector<std::vector<T>> const &g, std::size_t kh,
     return out;
   const std::size_t height = g.size();
   const std::size_t width = g[0].size();
+  out.reserve((height / kh) * (width / kw)); // the patch count is known
   for (std::size_t i = 0; i + kh <= height; i += kh) {
     for (std::size_t j = 0; j + kw <= width; j += kw) {
       std::vector<std::vector<T>> patch(kh, std::vector<T>(kw));

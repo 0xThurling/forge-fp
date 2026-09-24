@@ -68,4 +68,20 @@ int main() {
     fp::map_sqrt(w);
     bench::keep(&w[0]);
   });
+
+  // --- parallel map over 8 threads: the chunk-copy version used to move the
+  //     data out and back; this should be close to map_inplace / threads ---
+  {
+    fp::ThreadPool pool(8);
+    auto big = a; // 4M doubles
+    bench::measure("par_map_inplace (8 threads)", [&] {
+      fp::par_map_inplace(pool, big,
+                          [](fp::vec<double> x) { return x * 2.0 + 1.0; });
+      bench::keep(&big[0]);
+    });
+    bench::measure("map_inplace (1 thread, same data)", [&] {
+      fp::map_inplace(big, [](fp::vec<double> x) { return x * 2.0 + 1.0; });
+      bench::keep(&big[0]);
+    });
+  }
 }
