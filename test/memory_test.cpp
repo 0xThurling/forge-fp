@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <utility>
@@ -152,4 +153,45 @@ TEST(Memory, CopyHelpers) {
   std::vector<int> small(2, 0);
   auto r = fp::copy_into<int>(small, src);
   EXPECT_FALSE(r.is_ok());
+}
+
+TEST(Memory, AlignedBufferRoundsAndAligns) {
+  auto buf = fp::AlignedBuffer::alloc(100, 512);
+  ASSERT_TRUE(buf.is_ok()) << buf.error();
+  EXPECT_EQ(buf.value().size(), 512u);
+  EXPECT_EQ(buf.value().alignment(), 512u);
+  EXPECT_EQ(reinterpret_cast<std::uintptr_t>(buf.value().data()) % 512, 0u);
+  EXPECT_EQ(buf.value().span().size(), buf.value().size());
+  EXPECT_EQ(buf.value().end() - buf.value().begin(), 512);
+}
+
+TEST(Memory, AlignedBufferRejectsBadAlignment) {
+  EXPECT_FALSE(fp::AlignedBuffer::alloc(64, 0).is_ok());
+  EXPECT_FALSE(fp::AlignedBuffer::alloc(64, 3).is_ok());
+}
+
+TEST(Memory, AlignedBufferEmptyAllocatesNothing) {
+  auto buf = fp::AlignedBuffer::alloc(0, 4096);
+  ASSERT_TRUE(buf.is_ok()) << buf.error();
+  EXPECT_TRUE(buf.value().empty());
+  EXPECT_EQ(buf.value().size(), 0u);
+  EXPECT_EQ(buf.value().data(), nullptr);
+  EXPECT_EQ(buf.value().alignment(), 4096u);
+}
+
+TEST(Memory, AlignedBufferMovesAndClones) {
+  auto buf = fp::AlignedBuffer::alloc(64, 64);
+  ASSERT_TRUE(buf.is_ok()) << buf.error();
+  buf.value().fill(std::byte{0xAB});
+
+  auto copy = buf.value().clone();
+  ASSERT_TRUE(copy.is_ok());
+  EXPECT_EQ(copy.value().size(), 64u);
+  EXPECT_EQ(copy.value().data()[0], std::byte{0xAB});
+
+  fp::AlignedBuffer moved = fp::move(buf.value());
+  EXPECT_EQ(moved.size(), 64u);
+  EXPECT_EQ(buf.value().data(), nullptr);
+  EXPECT_EQ(buf.value().size(), 0u);
+  EXPECT_TRUE(buf.value().empty());
 }

@@ -153,6 +153,27 @@ objects with destructors use `Box<T>` (single) or a `std::vector<T>` (many).
 That restriction is what lets `Buffer` be a single `operator new`/`delete`
 pair with no per-element bookkeeping.
 
+### `AlignedBuffer` — runtime alignment
+
+`Buffer<T>` aligns to `alignof(T)`, which is fixed at compile time. Device I/O
+(`O_DIRECT`) and SIMD/GPU staging need an alignment that is only known at run
+time — the logical block size of a file — so `AlignedBuffer` is the
+byte-oriented counterpart:
+
+```cpp
+auto staging = fp::AlignedBuffer::alloc(1 << 20, 4096);  // Result<AlignedBuffer>
+if (!staging.is_ok())
+  return staging;
+
+staging.value().span();   // std::span<std::byte>, 1 MiB
+staging.value().data();   // address % 4096 == 0
+```
+
+`alignment` must be a power of two, and `size` is rounded **up** to it, so
+`size() % alignment() == 0` always holds — a block-sized read can never overrun
+the buffer. An empty buffer allocates nothing; `clone()` keeps the size and the
+alignment.
+
 ## Scoped allocation — `with_buffer` / `with_ptr`
 
 The safest way to use raw memory: the owner cannot escape the scope, and the
@@ -234,6 +255,38 @@ for (auto &job : jobs) {
 }
 ```
 
+`with_arena_scope` packages the mark/rollback pair na frame(64 * 1024);
+
+auto verts = frame.alloc_span<Vertex>(n);   // span, uninitialized
+auto *widget = frame.make<Widget>(x, y);    // construct in place
+
+frame.used();    // bytes allocated so far
+frame.reset();   // next allocation reuses the same memory
+```
+
+Every block is 64-byte aligned, and `alloc<T>`/`alloc_span<T>` honor the type's
+own alignment (up to 64). When a block fills up the arena adds a new, larger
+block, so previously handed-out pointers are never invalidated — including
+across `reset()`, which only rewinds offsets.
+
+### Checkpoints — nested scopes in one arena
+
+`mark()` records the current high-water mark; `reset_to(mark)` rewinds every
+allocation made after it and leaves earlier ones untouched.
+
+```cpp
+fp::Arena arena(1 << 20);
+
+auto *persistent = arena.make<Mesh>();
+const auto mark = arena.mark();
+
+for (auto &job : jobs) {
+  auto scratch = arena.alloc_span<double>(job.size);  // per-job scratch
+  process(job, scratch);
+  arena.reset_to(mark);                               // reclaim just this job
+}
+```
+
 `with_arena_scope` packages the mark/rollback pair so it also runs on
 exceptions:
 
@@ -268,6 +321,8 @@ auto scaled = fp::with_arena(1 << 20, [](fp::Arena &a) {
 |---|---|---|
 | A growable, value-semantic container | `std::vector<T>` | throws `bad_alloc` |
 | A fixed raw block with RAII ownership | `Buffer<T>` | `Result` |
+| A raw block aligned to a runtime boundary | `AlignedBuffer` | `Result` |
+| A fixed raw block with runtime alignment | `AlignedBuffer` | `Result` |
 | One object with a custom lifetime | `Box<T>` | `Result` |
 | Shared ownership | `Shared<T>` | `Result` |
 | Scratch memory that dies at scope end | `with_buffer` / `with_ptr` | `Result` |
@@ -278,6 +333,11 @@ auto scaled = fp::with_arena(1 << 20, [](fp::Arena &a) {
 
 - **`Buffer` elements are raw.** Reading before writing is undefined. Use
   `zeros`, `fill`, or write every element first.
+- **`AlignedBuffer` rounds its size up** to the alignment — `size()` is the
+  allocated size, not the requested one. That is the point: it makes
+  block-sized reads safe.
+- **`AlignedBuffer` rounds the size up.** `alloc(100, 512)` owns 512 bytes —
+  the request is a floor, not an exact size.
 - **`release()` is the only leak**, `adopt()` the only takeover. If neither
   appears in your code, ownership never escapes.
 - **Arena pointers are only valid until `reset()`** (or `reset_to` below their

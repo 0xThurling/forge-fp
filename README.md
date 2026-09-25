@@ -115,7 +115,7 @@ target_link_libraries(my_app PRIVATE forgefp)
 | `map.hpp` | `lookup`, `map_values`, `filter_values`, `merge_with`, `keys`, `values`, `to_map`, `to_unordered_map` (all generic over `std::map`/`std::unordered_map`) |
 | `maybe.hpp` | `std::optional` combinators: `map`/`and_then`/`or_else`/`filter`/`flatten`/`apply`/`collect`/`value_or_lazy`/`>>=` |
 | `memoize.hpp` | `memoize<Arg>(f)`, `memoize2<A,B>(f)`, `memoizeN<Args...>(f)` |
-| `memory.hpp` | `move`/`forward`, pointer helpers (`ptr`/`ref`/`deref`/`as_const`), lifetime (`construct_at`/`destroy_at`/`destroy`), `Buffer<T>` (aligned owning buffer), `Box<T>` (unique owner), `Shared<T>`/`make_shared`/`share` |
+| `memory.hpp` | `move`/`forward`, pointer helpers (`ptr`/`ref`/`deref`/`as_const`), lifetime (`construct_at`/`destroy_at`/`destroy`), `Buffer<T>` (owning block), `AlignedBuffer` (runtime-aligned bytes), `Box<T>` (unique owner), `Shared<T>`/`make_shared`/`share` |
 | `numerics.hpp` | `is_finite`/`nan_to_num`, `approx_equal`, `clamp`, `relu`/`sigmoid`/`softmax`/`softmax_rows`/`log_softmax`/`logsumexp`, `linspace`/`arange`, `central_difference` |
 | `ops.hpp` | named operators: `plus`/`minus`/`times`/`divide`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, `and_`/`or_`/`not_`, `negate`/`increment`/`decrement`, elementwise math (`abs`/`sqrt`/`exp`/`log`/`log1p`/`sin`/`cos`/`tanh`/`sign`), `min_`/`max_`/`pow`/`clamp` |
 | `parse.hpp` | `Parser<T>` + primitives/sequencing/choice/lexemes (`eof`/`peek`/`not_followed`/`label`/`context`/`many1`/`chainl1`), position-carrying errors, operators (`>>`, `<<`, `\|`, `>>=`, `*`, `%`) |
@@ -186,7 +186,7 @@ chain with no error branches.
   right for cheap keys; for keys that allocate or compute, use
   `sort_by_cached`/`sort_by_cached_inplace` (keys computed once).
 - **`reflect.hpp`** needs no macros or RTTI. It reflects aggregates (up to 32
-  fields), C arrays and tuple-like types; field names are recovered at compile
+  fields), C arrays and tuple-like types; field names are recovered at c; field names are recovered at compile
   time on GCC/Clang and fall back to `fieldN` elsewhere. The registry is
   thread-safe.
 - **`bits.hpp`** is `constexpr` throughout; bit-index preconditions are

@@ -223,6 +223,106 @@ private:
   std::size_t size_ = 0;
 };
 
+// --- runtime-aligned raw block ----------------------------------------------
+// `Buffer<T>` aligns to `alignof(T)`, which is fixed at compile time. Device
+// I/O and SIMD/GPU staging need an alignment that is only known at run time —
+// the logical block size of a file — so this is the byte-oriented counterpart.
+
+class AlignedBuffer {
+public:
+  AlignedBuffer() noexcept = default;
+
+  AlignedBuffer(AlignedBuffer &&other) noexcept
+      : data_(std::exchange(other.data_, nullptr)),
+        size_(std::exchange(other.size_, 0)),
+        alignment_(std::exchange(other.alignment_, 0)) {}
+
+  AlignedBuffer &operator=(AlignedBuffer &&other) noexcept {
+    if (this != &other) {
+      free_memory();
+      data_ = std::exchange(other.data_, nullptr);
+      size_ = std::exchange(other.size_, 0);
+      alignment_ = std::exchange(other.alignment_, 0);
+    }
+    return *this;
+  }
+
+  AlignedBuffer(AlignedBuffer const &) = delete;
+  AlignedBuffer &operator=(AlignedBuffer const &) = delete;
+
+  ~AlignedBuffer() { free_memory(); }
+
+  // `alignment` must be a power of two; `size` is rounded up to it, so
+  // `size() % alignment() == 0` always holds (alignment is 0 only for a
+  // moved-from buffer). An empty buffer allocates nothing.
+  [[nodiscard]] static Result<AlignedBuffer> alloc(std::size_t size,
+                                                   std::size_t alignment = 64) {
+    AlignedBuffer b;
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0)
+      return err<AlignedBuffer>("alignment must be a power of two");
+
+    b.alignment_ = alignment;
+    const std::size_t rounded = (size + alignment - 1) & ~(alignment - 1);
+    if (rounded == 0)
+      return ok(std::move(b));
+
+    try {
+      b.data_ = static_cast<std::byte *>(allocate(rounded, alignment));
+      b.size_ = rounded;
+    } catch (std::bad_alloc const &) {
+      return err<AlignedBuffer>("allocation failed");
+    }
+    return ok(std::move(b));
+  }
+
+  [[nodiscard]] std::size_t size() const noexcept { return size_; }
+  [[nodiscard]] std::size_t alignment() const noexcept { return alignment_; }
+  [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+
+  std::byte *data() noexcept { return data_; }
+  std::byte const *data() const noexcept { return data_; }
+
+  std::span<std::byte> span() noexcept { return {data_, size_}; }
+  std::span<std::byte const> span() const noexcept { return {data_, size_}; }
+
+  std::byte *begin() noexcept { return data_; }
+  std::byte *end() noexcept { return data_ + size_; }
+  std::byte const *begin() const noexcept { return data_; }
+  std::byte const *end() const noexcept { return data_ + size_; }
+
+  void fill(std::byte value) { std::fill_n(data_, size_, value); }
+
+  [[nodiscard]] Result<AlignedBuffer> clone() const {
+    auto out = alloc(size_, alignment_ == 0 ? 64 : alignment_);
+    if (!out.is_ok())
+      return out;
+    std::copy_n(data_, size_, out.value().data_);
+    return out;
+  }
+
+private:
+  static void *allocate(std::size_t bytes, std::size_t alignment) {
+    return ::operator new(bytes, std::align_val_t{alignment});
+  }
+
+  static void deallocate(void *p, std::size_t bytes,
+                         std::size_t alignment) noexcept {
+    ::operator delete(p, bytes, std::align_val_t{alignment});
+  }
+
+  void free_memory() noexcept {
+    if (data_)
+      deallocate(data_, size_, alignment_);
+    data_ = nullptr;
+    size_ = 0;
+    alignment_ = 0;
+  }
+
+  std::byte *data_ = nullptr;
+  std::size_t size_ = 0;
+  std::size_t alignment_ = 0;
+};
+
 // --- single object ----------------------------------------------------------
 
 template <class T> class Box {
